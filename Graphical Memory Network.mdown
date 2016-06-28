@@ -1,0 +1,56 @@
+
+# Graphical Memory Network
+Extension of "Gated Graph Sequence Neural Networks" for natural language input, using ideas from "End-To-End Memory Networks"
+
+## State
+- Set of nodes, each with a node annotation vector and a strength
+    + strengths: (n_nodes)
+    + annotations: (n_nodes, node_annotation_width)
+- Edge matrix, where every directed node-node pair has an edge annotation and a strength
+    + strengths: (n_nodes, n_nodes)
+    + annotations: (n_nodes, n_nodes, edge_annotation_width)
+
+## Updates
+For each sentence:
+- Input processed by INPUT NETWORK (gru?) -> input vector (input_width)
+- Every node modifies its own annotation based on the input
+    + input [input vector] with hidden state [current node annotation] -> gru-style updates across entire node annotation -> new node annotation
+- (Optional:) We run a few propagation steps:
+    + Input activations determined by weighted sum across all other nodes:
+        * a_i =  \sum_{j \in nodes} s_j [ s_{e_{ij}} f(h_j, h_{e_{ij}}) +  s_{e_{ji}} g(h_j, h_{e_{ji}}) ]
+        * where a_i is the input activation we want
+        * s_j is the strength of node j
+        * s_{e_{ij}} is the strength of the edge from i to j
+        * h_j is the annotation of node j
+        * h_{e_{ij}} is the annotation of the edge from i to j
+        * f and g are functions of the form f(y,z) = W[y z] + b
+    + Every node modifies its own annotation based on this input activation gru-style
+- Candidate nodes are proposed by PROPOSAL NETWORK (gru?)
+    + input is just input vector
+    + sequence of candidate new nodes to create [(node_annotation_width), ...], limited to some cap.
+- Every node "votes" on whether or not to reject each candidate:
+    + concatenate [node annotation, new annotation] -> Wx+b -> sigmoid -> multiply by node strength
+    + All votes are accumulated by product of inverses, such that final answer is ~ chance that no one rejectscd
+    + This becomes new node strength
+- Every (potential) edge modifies its own [existence, annotation]
+    + concatenate [input vector, source node annotation, dest node annotation] as input
+    + scale edge annotation by existence in calculations of GRU-style update (but don't directly pass existence)
+    + update should be biased small as in GRU
+
+Then for the query:
+- Query processed by QUERY NETWORK (gru?) -> query vector (query_width)
+- Every node modifies its own annotation based on the query
+    + input [query vector] with hidden state [current node annotation] -> gru-style updates across entire node annotation -> new node annotation
+- We run a few propagation steps:
+    + Input activations determined by weighted sum across all other nodes:
+        * a_i =  \sum_{j \in nodes} s_j [ s_{e_{ij}} f(x_j, x_{e_{ij}}) +  s_{e_{ji}} g(x_j, x_{e_{ji}}) ]
+        * where a_i is the input activation we want
+        * s_j is the strength of node j
+        * s_{e_{ij}} is the strength of the edge from i to j
+        * x_j is the annotation of node j
+        * x_{e_{ij}} is the annotation of the edge from i to j
+        * f and g are functions of the form f(y,z) = W[y z] + b
+    + Every node modifies its own annotation based on this input activation gru-style
+- We extract a graph-level representation vector as in GG-NN using attention
+- This vector is processed by the ANSWER NETWORK (gru?) -> answer sequence
+    + (Alternately, answer network is feedforward, and we do more propagation steps?)
