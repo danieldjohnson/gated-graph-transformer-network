@@ -87,6 +87,21 @@ class GraphState( object ):
     def unflatten(cls, vals):
         return cls(*vals)
 
+    def flatten_to_const_size(self, const_n_nodes):
+        exp_node_strengths = pad_to(self.node_strengths, [self.n_batch, const_n_nodes])
+        exp_node_states = pad_to(self.node_states, [self.n_batch, const_n_nodes, self.node_state_width])
+        exp_edge_strengths = pad_to(self.edge_strengths, [self.n_batch, const_n_nodes, const_n_nodes])
+        exp_edge_states = pad_to(self.edge_states, [self.n_batch, const_n_nodes, const_n_nodes, self.edge_state_width])
+        return [exp_node_strengths, exp_node_states, exp_edge_strengths, exp_edge_states, self.n_nodes]
+    
+    @classmethod
+    def unflatten_from_const_size(cls, vals):
+        exp_node_strengths, exp_node_states, exp_edge_strengths, exp_edge_states, n_nodes = vals
+        return cls( exp_node_strengths[:,:n_nodes],
+                    exp_node_states[:,:n_nodes,:]
+                    exp_edge_strengths[:,:n_nodes,:n_nodes],
+                    exp_edge_states[:,:n_nodes,:n_nodes,:])
+
     def with_updates(self, node_strengths=None, node_states=None, edge_strengths=None, edge_states=None):
         """
         Helper function to generate a new state with changes applied. Params like in constructor, or None
@@ -115,14 +130,9 @@ class GraphState( object ):
         next_node_states = T.concatenate([self.node_states, new_node_states], 1)
         next_n_nodes = next_node_strengths.shape[0]
 
-        next_edge_strengths = T.zeros([self.n_batch, next_n_nodes, next_n_nodes])
-        next_edge_strengths = T.set_subtensor(
-                                    next_edge_strengths[:,:self.n_nodes,:self.n_nodes],
-                                    self.edge_strengths)
-        next_edge_states = T.zeros([self.n_batch, next_n_nodes, next_n_nodes, self.edge_state_width])
-        next_edge_states = T.set_subtensor(
-                                    next_edge_states[:,:self.n_nodes,:self.n_nodes,:],
-                                    self.edge_states)
+        next_edge_strengths = pad_to(self.edge_strengths, [self.n_batch, next_n_nodes, next_n_nodes])
+        next_edge_states = pad_to(self.edge_states, [self.n_batch, next_n_nodes, next_n_nodes, self.edge_state_width])
+
         cls = type(self)
         return cls(next_node_strengths, next_node_states, next_edge_strengths, next_edge_states)
 

@@ -43,3 +43,10 @@ def broadcast_concat(tensors, axis):
             broadcasted_tensors.append(T.tile(t, tile_reps))
     return T.concatenate(broadcasted_tensors, axis)
 
+def pad_to(tensor, shape):
+    """
+    Pads tensor to shape with zeros
+    """
+    newtensor = T.zeros(shape)
+    slices = tuple(slice(0,s) for s in tensor.shape)
+    return T.set_subtensor(newtensor[slices], tensor)
