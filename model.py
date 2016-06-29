@@ -69,6 +69,9 @@ class Model( object ):
         self.edge_state_updater = tfms.EdgeStateUpdateTransformation(input_repr_size, graphspec)
         self.parameterized.append(self.edge_state_updater)
 
+        self.query_node_state_updater = tfms.NodeStateUpdateTransformation(input_repr_size, graphspec)
+        self.parameterized.append(self.query_node_state_updater)
+
         self.final_propagator = tfms.PropagationTransformation(propagate_repr_size, graphspec, T.tanh)
         self.parameterized.append(self.final_propagator)
 
@@ -99,11 +102,15 @@ class Model( object ):
         # input_words: shape (n_batch, n_sentence, sentence_len)
         input_words = T.itensor3()
         n_batch, n_sentences, sentence_len = input_words.shape
+        # query_words: shape (n_batch, query_len)
+        query_words = T.itensor3()
 
         # Process each sentence, flattened to (?, sentence_len)
         flat_input_words = input_words.reshape([-1, sentence_len])
         flat_input_reprs = self.input_transformer.process(flat_input_words) # shape (?, input_repr_size)
         input_reprs = flat_input_reprs.reshape([n_batch, n_sentences, self.input_repr_size])
+
+        query_repr = self.input_transformer.process(query_words)
 
         # Scan over each sentence
         def _scan_fn(input_repr, *stuff) # (input_repr, *flat_graph_state, pad_graph_size)
@@ -134,7 +141,8 @@ class Model( object ):
         final_flat_gstate = [x[:-1, ...] for x in all_flat_gstates]
         final_gstate = GraphState.unflatten_from_const_size(final_flat_gstate)
 
-        aggregated_repr = self.aggregator.process(final_gstate) # shape (n_batch, output_repr_size)
+        query_gstate = self.query_node_state_updater.process(final_gstate, query_repr)
+        aggregated_repr = self.aggregator.process(query_gstate) # shape (n_batch, output_repr_size)
         final_output = self.output_processor.process(aggregated_repr) # shape (n_batch, ?, num_output_words)
 
         # correct_output: shape (n_batch, ?, num_output_words)
@@ -153,16 +161,16 @@ class Model( object ):
 
         adam_updates = Adam(loss, self.params)
 
-        self.train_fn = theano.function([input_words, correct_output],
+        self.train_fn = theano.function([input_words, query_words, correct_output],
                                         loss,
                                         updates=adam_updates,
                                         allow_input_downcast=True)
 
-        self.eval_fn = theano.function( [input_words, correct_output],
+        self.eval_fn = theano.function( [input_words, query_words, correct_output],
                                         loss,
                                         allow_input_downcast=True)
 
-        self.test_fn = theano.function( [input_words],
+        self.test_fn = theano.function( [input_words, query_words],
                                         [loss] + all_flat_gstates,
                                         allow_input_downcast=True)
 
