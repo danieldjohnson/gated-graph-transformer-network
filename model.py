@@ -18,7 +18,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, node_state_size, edge_state_size, input_repr_size, output_repr_size, propagate_repr_size, new_nodes_per_iter, output_format,final_propagate, node_state_update=True, intermediate_propagate=0, setup=True):
+    def __init__(self, num_input_words, num_output_words, node_state_size, edge_state_size, input_repr_size, output_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, nodes_mutable=True, intermediate_propagate=0, setup=True):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -32,7 +32,7 @@ class Model( object ):
             output_format: Member of ModelOutputFormat, giving the format of the output
             final_propagate: How many steps to propagate info for each input sentence
             intermediate_propagate: How many steps to propagate info for each input sentence
-            node_state_update: Whether nodes should update their state based on input
+            nodes_mutable: Whether nodes should update their state based on input
             setup: Whether or not to automatically set up the model
         """
         self.num_input_words = num_input_words
@@ -46,7 +46,7 @@ class Model( object ):
         self.output_format = output_format
         self.final_propagate = final_propagate
         self.intermediate_propagate = intermediate_propagate
-        self.node_state_update = node_state_update
+        self.nodes_mutable = nodes_mutable
 
         graphspec = GraphStateSpec(self.node_state_size, self.edge_state_size)
 
@@ -55,7 +55,7 @@ class Model( object ):
         self.input_transformer = tfms.InputSequenceTransformation(num_input_words, input_repr_size)
         self.parameterized.append(self.input_transformer)
 
-        if node_state_update:
+        if nodes_mutable:
             self.node_state_updater = tfms.NodeStateUpdateTransformation(input_repr_size, graphspec)
             self.parameterized.append(self.node_state_updater)
 
@@ -119,7 +119,7 @@ class Model( object ):
             gstate = GraphState.unflatten_from_const_size(flat_graph_state)
 
             # If necessary, update node state
-            if self.node_state_update:
+            if self.nodes_mutable:
                 gstate = self.node_state_updater.process(gstate, input_repr)
 
             # If necessary, propagate node state
