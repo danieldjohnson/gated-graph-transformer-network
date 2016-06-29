@@ -27,8 +27,8 @@ class OutputCategoryTransformation( object ):
         Params:
             input_vector: Vector of shape (n_batch, input_width)
 
-        Returns: Categorical distribution of shape (n_batch, num_categories), such that it sums to 1 across
+        Returns: Categorical distribution of shape (n_batch, 1, num_categories), such that it sums to 1 across
             all categories for each instance in the batch
         """
         transformed = do_layer(T.nnet.softmax, input_vector, self._transform_W, self._transform_b)
-        return transformed
+        return T.shape_padaxis(transformed,1)

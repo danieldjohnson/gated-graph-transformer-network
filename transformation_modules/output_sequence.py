@@ -32,8 +32,7 @@ class OutputSequenceTransformation( object ):
             input_vector: Vector of shape (n_batch, input_width)
             seq_len: How many outputs to produce
 
-        Returns: Set distribution of shape (n_batch, num_categories), where each value is independent from
-            the others.
+        Returns: Sequence distribution of shape (n_batch, seq_len, num_words)
         """
         n_batch = input_vector.shape[0]
         outputs_info = [self._seq_gru.initial_state(n_batch)]
@@ -43,6 +42,6 @@ class OutputSequenceTransformation( object ):
         # all_out is of shape (seq_len, n_batch, state_size). Squash and apply layer
         flat_out = all_out.reshape([-1, self._state_size])
         flat_final = do_layer(T.nnet.softmax, flat_out, self._transform_W, self._transform_b)
-        final = flat_final.reshape([seq_len, n_batch, self._num_words])
+        final = flat_final.reshape([seq_len, n_batch, self._num_words]).dimshuffle([1,0,2])
 
         return final

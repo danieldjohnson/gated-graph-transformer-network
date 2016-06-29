@@ -28,8 +28,8 @@ class OutputSetTransformation( object ):
         Params:
             input_vector: Vector of shape (n_batch, input_width)
 
-        Returns: Set distribution of shape (n_batch, num_categories), where each value is independent from
+        Returns: Set distribution of shape (n_batch, 1, num_categories), where each value is independent from
             the others.
         """
         transformed = do_layer(T.nnet.sigmoid, input_vector, self._transform_W, self._transform_b)
-        return transformed
+        return T.shape_padaxis(transformed,1)
