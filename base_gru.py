@@ -70,20 +70,3 @@ class BaseGRULayer( object ):
 
         newstate = update * state + (1-update) * candidate_act
         return newstate
-
-    def process(self, inputs):
-        """
-        Process a set of inputs and return the final state
-
-        Params:
-            input_words: List of inputs. Should be an int tensor of shape (n_batch, input_len, self.input_size)
-
-        Returns: The last output state
-        """
-        n_batch, input_len, _ = inputs.shape
-        outputs_info = [self.initial_state(n_batch)]
-        valseq = inputs.dimshuffle([1,0,2])
-        all_out, _ = theano.scan(self.step, sequences=[valseq], outputs_info=outputs_info)
-
-        # all_out is of shape (input_len, n_batch, self.output_width). We want last timestep
-        return all_out[-1,:,:]
