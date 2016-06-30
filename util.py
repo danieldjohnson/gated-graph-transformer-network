@@ -50,3 +50,10 @@ def pad_to(tensor, shape):
     newtensor = T.zeros(shape)
     slices = tuple(slice(0,s) for s in tensor.shape)
     return T.set_subtensor(newtensor[slices], tensor)
+
+def set_params(params, saved_params):
+    """
+    Copies saved_params into params (both must be theano shared variables)
+    """
+    for param,saved in zip(params, saved_params):
+        param.set_value(saved.get_value())
