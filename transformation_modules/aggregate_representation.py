@@ -34,7 +34,9 @@ class AggregateRepresentationTransformation( object ):
         flat_activations = do_layer(lambda x:x, flat_states, self._representation_W, self._representation_b)
         activations = flat_activations.reshape([gstate.n_batch, gstate.n_nodes, self._representation_width+1])
 
-        selector = T.shape_padright(T.nnet.softmax(activations[:,:,0]))
+        activation_strengths = activations[:,:,0]
+        existence_penalty = T.log(gstate.node_strengths)
+        selector = T.shape_padright(T.nnet.softmax(activation_strengths + existence_penalty))
         representations = T.tanh(activations[:,:,1:])
 
         result = T.sum(selector * representations, 1)
