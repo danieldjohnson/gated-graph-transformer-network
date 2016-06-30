@@ -45,7 +45,7 @@ class PropagationTransformation( object ):
             gstate: A GraphState giving the current state
         """
 
-        def helper_transform(aligned_source_part, transfer_W, transfer_b)
+        def helper_transform(aligned_source_part, transfer_W, transfer_b):
             # combined input should be broadcasted to (n_batch, n_nodes, n_nodes, X)
             edge_state_part = gstate.edge_states
             full_input = broadcast_concat([aligned_source_part, edge_state_part], 3)

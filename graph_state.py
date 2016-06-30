@@ -98,7 +98,7 @@ class GraphState( object ):
     def unflatten_from_const_size(cls, vals):
         exp_node_strengths, exp_node_states, exp_edge_strengths, exp_edge_states, n_nodes = vals
         return cls( exp_node_strengths[:,:n_nodes],
-                    exp_node_states[:,:n_nodes,:]
+                    exp_node_states[:,:n_nodes,:],
                     exp_edge_strengths[:,:n_nodes,:n_nodes],
                     exp_edge_states[:,:n_nodes,:n_nodes,:])
 

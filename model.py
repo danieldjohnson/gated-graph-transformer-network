@@ -8,7 +8,7 @@ import transformation_modules as tfms
 from graph_state import GraphStateSpec, GraphState 
 from adam import Adam
 
-class ModelOutputFormat( Enum )
+class ModelOutputFormat( Enum ):
     category = 1
     subset = 2
     sequence = 3
@@ -113,7 +113,7 @@ class Model( object ):
         query_repr = self.input_transformer.process(query_words)
 
         # Scan over each sentence
-        def _scan_fn(input_repr, *stuff) # (input_repr, *flat_graph_state, pad_graph_size)
+        def _scan_fn(input_repr, *stuff): # (input_repr, *flat_graph_state, pad_graph_size)
             pad_graph_size = stuff[-1]
             flat_graph_state = stuff[:-1]
             gstate = GraphState.unflatten_from_const_size(flat_graph_state)
