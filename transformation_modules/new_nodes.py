@@ -66,8 +66,10 @@ class NewNodesTransformation( object ):
         vote_result = do_layer(T.nnet.sigmoid, flat_vote_input, self._vote_W, self._vote_b)
         final_votes = vote_result.reshape([max_candidates, n_batch, n_nodes])
 
+        # Add in the strength vote
+        all_votes = T.concatenate([T.shape_padright(candidate_strengths), final_votes], 2)
         # Take the product -> (candidate, n_batch)
-        chosen_strengths = candidate_strengths * T.prod(final_votes, 2)
+        chosen_strengths = T.prod(all_votes, 2)
 
         new_strengths = chosen_strengths.dimshuffle([1,0])
         new_states = candidate_states.dimshuffle([1,0,2])
