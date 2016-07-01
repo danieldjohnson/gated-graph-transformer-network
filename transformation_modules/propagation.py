@@ -22,10 +22,10 @@ class PropagationTransformation( object ):
         self._graph_spec = graph_spec
         self._process_input_size = graph_spec.node_state_size + graph_spec.edge_state_size
 
-        self._transfer_fwd_W = theano.shared(init_params([_process_input_size, self._transfer_fwd_size]), "propagation_transfer_fwd_W")
-        self._transfer_fwd_b = theano.shared(init_params([self._transfer_fwd_size]), "propagation_transfer_fwd_b")
-        self._transfer_bwd_W = theano.shared(init_params([_process_input_size, self._transfer_bwd_size]), "propagation_transfer_bwd_W")
-        self._transfer_bwd_b = theano.shared(init_params([self._transfer_bwd_size]), "propagation_transfer_bwd_b")
+        self._transfer_fwd_W = theano.shared(init_params([self._process_input_size, transfer_size]), "propagation_transfer_fwd_W")
+        self._transfer_fwd_b = theano.shared(init_params([transfer_size]), "propagation_transfer_fwd_b")
+        self._transfer_bwd_W = theano.shared(init_params([self._process_input_size, transfer_size]), "propagation_transfer_bwd_W")
+        self._transfer_bwd_b = theano.shared(init_params([transfer_size]), "propagation_transfer_bwd_b")
 
         self._propagation_gru = BaseGRULayer(self._transfer_size, graph_spec.node_state_size, name="propagation")
 

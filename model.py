@@ -103,7 +103,7 @@ class Model( object ):
         input_words = T.itensor3()
         n_batch, n_sentences, sentence_len = input_words.shape
         # query_words: shape (n_batch, query_len)
-        query_words = T.itensor3()
+        query_words = T.imatrix()
 
         # Process each sentence, flattened to (?, sentence_len)
         flat_input_words = input_words.reshape([-1, sentence_len])
@@ -132,19 +132,21 @@ class Model( object ):
             # Update edge state
             gstate = self.edge_state_updater.process(gstate, input_repr)
 
-            return gstate.flatten_to_const_size(pad_graph_size)
+            flat_gstate = gstate.flatten_to_const_size(pad_graph_size)
+            return flat_gstate
 
         pad_graph_size = n_sentences * self.new_nodes_per_iter
         outputs_info = GraphState.create_empty(n_batch, self.node_state_size, self.edge_state_size).flatten_to_const_size(pad_graph_size)
         prepped_input = input_reprs.dimshuffle([1,0,2])
-        all_flat_gstates = theano.scan(_scan_fn, sequences=[prepped_input], outputs_info=outputs_info, non_sequences=[pad_graph_size])
-        final_flat_gstate = [x[:-1, ...] for x in all_flat_gstates]
+        all_flat_gstates, _ = theano.scan(_scan_fn, sequences=[prepped_input], outputs_info=outputs_info, non_sequences=[pad_graph_size])
+        final_flat_gstate = [x[-1] for x in all_flat_gstates]
         final_gstate = GraphState.unflatten_from_const_size(final_flat_gstate)
 
         query_gstate = self.query_node_state_updater.process(final_gstate, query_repr)
-        aggregated_repr = self.aggregator.process(query_gstate) # shape (n_batch, output_repr_size)
+        propagated_gstate = self.final_propagator.process_multiple(query_gstate, self.final_propagate)
+        aggregated_repr = self.aggregator.process(propagated_gstate) # shape (n_batch, output_repr_size)
         final_output = self.output_processor.process(aggregated_repr) # shape (n_batch, ?, num_output_words)
-
+        
         # correct_output: shape (n_batch, ?, num_output_words)
         correct_output = T.ftensor3()
 
@@ -171,7 +173,7 @@ class Model( object ):
                                         allow_input_downcast=True)
 
         self.test_fn = theano.function( [input_words, query_words],
-                                        [loss] + all_flat_gstates,
+                                        [final_output] + all_flat_gstates,
                                         allow_input_downcast=True)
 
 

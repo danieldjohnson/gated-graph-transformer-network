@@ -7,7 +7,7 @@ import babi_train
 import babi_parse
 from util import *
 
-def main(task_fn, output_format_str, mutable_nodes, propagate_intermediate, output_dir, num_updates, batch_size, resume, resume_auto):
+def main(task_fn, output_format_str, mutable_nodes, propagate_intermediate, outputdir, num_updates, batch_size, resume, resume_auto):
     output_format = model.ModelOutputFormat[output_format_str]
 
     prepped_stories = babi_parse.prepare_stories(babi_parse.get_stories(task_fn))
@@ -48,6 +48,7 @@ def main(task_fn, output_format_str, mutable_nodes, propagate_intermediate, outp
     if not os.path.exists(outputdir):
         os.makedirs(outputdir)
 
+    print("Starting to train...")
     babi_train.train(m, bucketed, len(eff_anslist), output_format, num_updates, outputdir, start_idx, batch_size)
     pickle.dump( m.params, open( os.path.join(outputdir, "final_params.p"), "wb" ) )
 
@@ -56,7 +57,7 @@ parser.add_argument('task_fn', help="Filename of the task to load")
 parser.add_argument('output_format_str', choices=[x.name for x in model.ModelOutputFormat], help="Output format for the task")
 parser.add_argument('--mutable_nodes', action="store_true", help="Make nodes mutable")
 parser.add_argument('--propagate_intermediate', action="store_true", help="Run a propagation step after each sentence")
-parser.add_argument('--output_dir', default="output", help="Directory to save output in")
+parser.add_argument('--outputdir', default="output", help="Directory to save output in")
 parser.add_argument('--num_updates', default="10000", type=int, help="How many iterations to train")
 parser.add_argument('--batch_size', default="10", type=int, help="Batch size to use")
 resume_group = parser.add_mutually_exclusive_group()

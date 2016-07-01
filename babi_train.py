@@ -1,4 +1,5 @@
 import numpy as np
+import os
 import model
 import random
 import babi_parse
@@ -48,7 +49,7 @@ def assemble_batch(matching_stories, batch_size, num_answer_words, format_spec):
 def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE):
     with GracefulInterruptHandler() as interrupt_h:
         for i in range(start+1,start+num_updates+1):
-            cur_bucket = random.choice(bucketed)
+            cur_bucket = random.choice(story_buckets)
             sampled_batch = assemble_batch(cur_bucket, batch_size, len_answers, output_format)
             loss = m.train_fn(*sampled_batch)
             with open(os.path.join(outputdir,'data.csv'),'a') as f:

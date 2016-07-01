@@ -17,11 +17,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """    
+import theano
+import theano.tensor as T
+import numpy as np
 
 def Adam(cost, params, lr=0.0002, b1=0.1, b2=0.001, e=1e-8):
     updates = []
     grads = T.grad(cost, params)
-    i = theano.shared(floatX(0.))
+    i = theano.shared(np.array(0., theano.config.floatX))
     i_t = i + 1.
     fix1 = 1. - (1. - b1)**i_t
     fix2 = 1. - (1. - b2)**i_t

@@ -17,7 +17,7 @@ def do_layer(activation, ipt, weights, biases):
     Returns: Tensor of shape (n_batch, Y)
     """
     xW = T.dot(ipt, weights)
-    b = T.shape_padright(biases)
+    b = T.shape_padleft(biases)
     return activation( xW + b )
 
 def broadcast_concat(tensors, axis):

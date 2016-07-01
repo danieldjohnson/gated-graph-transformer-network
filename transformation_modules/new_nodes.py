@@ -61,7 +61,7 @@ class NewNodesTransformation( object ):
         # squash to (parallel, input_stuff), do voting op, then unsquash
         candidate_state_part = T.shape_padaxis(candidate_states, 2)
         node_state_part = T.shape_padaxis(gstate.node_states, 0)
-        full_vote_input = T.concatenate([node_state_part, candidate_state_part], 3)
+        full_vote_input = broadcast_concat([node_state_part, candidate_state_part], 3)
         flat_vote_input = full_vote_input.reshape([-1, 2*self._graph_spec.node_state_size])
         vote_result = do_layer(T.nnet.sigmoid, flat_vote_input, self._vote_W, self._vote_b)
         final_votes = vote_result.reshape([max_candidates, n_batch, n_nodes])

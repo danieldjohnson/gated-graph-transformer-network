@@ -1,6 +1,7 @@
 import theano
 import theano.tensor as T
 import numpy as np
+from util import *
 
 from collections import namedtuple
 
@@ -10,7 +11,7 @@ class GraphState( object ):
     """
     A class representing the state of a graph. Wrapper for a few theano tensors
     """
-    def __init__(node_strengths, node_states, edge_strengths, edge_states):
+    def __init__(self, node_strengths, node_states, edge_strengths, edge_states):
         """
         Create a graph state directly from existing nodes and edges.
             
@@ -128,7 +129,7 @@ class GraphState( object ):
         """
         next_node_strengths = T.concatenate([self.node_strengths, new_node_strengths], 1)
         next_node_states = T.concatenate([self.node_states, new_node_states], 1)
-        next_n_nodes = next_node_strengths.shape[0]
+        next_n_nodes = next_node_strengths.shape[1]
 
         next_edge_strengths = pad_to(self.edge_strengths, [self.n_batch, next_n_nodes, next_n_nodes])
         next_edge_states = pad_to(self.edge_states, [self.n_batch, next_n_nodes, next_n_nodes, self.edge_state_width])
