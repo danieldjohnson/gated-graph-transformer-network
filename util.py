@@ -4,7 +4,7 @@ import numpy as np
 
 def init_params(shape, stddev=0.1, shift=0.0):
     """Get an initial value for a parameter"""
-    return np.random.normal(shift, stddev, shape)
+    return np.float32(np.random.normal(shift, stddev, shape))
 
 def do_layer(activation, ipt, weights, biases):
     """

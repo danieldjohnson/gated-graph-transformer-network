@@ -159,7 +159,7 @@ class Model( object ):
             timewise_loss = T.nnet.categorical_crossentropy(flat_final_output, flat_correct_output)
             full_loss = T.sum(timewise_loss)
 
-        loss = full_loss/n_batch
+        loss = full_loss/T.cast(n_batch, 'float32')
 
         adam_updates = Adam(loss, self.params)
 
