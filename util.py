@@ -47,9 +47,11 @@ def pad_to(tensor, shape):
     """
     Pads tensor to shape with zeros
     """
-    newtensor = T.zeros(shape)
-    slices = tuple(slice(0,s) for s in tensor.shape)
-    return T.set_subtensor(newtensor[slices], tensor)
+    current = tensor
+    for i in range(len(shape)):
+        padding = T.zeros([(fs-ts if i==j else fs if j<i else ts) for j,(ts,fs) in enumerate(zip(tensor.shape, shape))])
+        current = T.concatenate([current, padding], i)
+    return current
 
 def set_params(params, saved_params):
     """

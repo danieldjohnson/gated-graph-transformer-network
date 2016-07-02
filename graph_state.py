@@ -36,10 +36,10 @@ class GraphState( object ):
             node_state_size: An integer giving size of node state
             edge_state_size: An integer givins size of edge state
         """
-        return cls( T.zeros([batch_size, 1]),
-                    T.zeros([batch_size, 1, node_state_size]),
-                    T.zeros([batch_size, 1, 1]),
-                    T.zeros([batch_size, 1, 1, edge_state_size]))
+        return cls( T.unbroadcast(T.zeros([batch_size, 1]), 1),
+                    T.unbroadcast(T.zeros([batch_size, 1, node_state_size]), 1),
+                    T.unbroadcast(T.zeros([batch_size, 1, 1]), 1, 2),
+                    T.unbroadcast(T.zeros([batch_size, 1, 1, edge_state_size]), 1, 2))
 
     @classmethod
     def create_empty_from_spec(cls, batch_size, spec):

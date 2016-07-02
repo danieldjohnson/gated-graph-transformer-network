@@ -18,7 +18,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, node_state_size, edge_state_size, input_repr_size, output_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, nodes_mutable=True, intermediate_propagate=0, setup=True):
+    def __init__(self, num_input_words, num_output_words, node_state_size, edge_state_size, input_repr_size, output_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, nodes_mutable=True, intermediate_propagate=0, unroll_loop=0, setup=True):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -33,6 +33,7 @@ class Model( object ):
             final_propagate: How many steps to propagate info for each input sentence
             intermediate_propagate: How many steps to propagate info for each input sentence
             nodes_mutable: Whether nodes should update their state based on input
+            unroll_loop: How many timesteps to unroll the main loop, or 0 to use scan
             setup: Whether or not to automatically set up the model
         """
         self.num_input_words = num_input_words
@@ -47,6 +48,7 @@ class Model( object ):
         self.final_propagate = final_propagate
         self.intermediate_propagate = intermediate_propagate
         self.nodes_mutable = nodes_mutable
+        self.unroll_loop = unroll_loop
 
         graphspec = GraphStateSpec(self.node_state_size, self.edge_state_size)
 
@@ -112,12 +114,7 @@ class Model( object ):
 
         query_repr = self.input_transformer.process(query_words)
 
-        # Scan over each sentence
-        def _scan_fn(input_repr, *stuff): # (input_repr, *flat_graph_state, pad_graph_size)
-            pad_graph_size = stuff[-1]
-            flat_graph_state = stuff[:-1]
-            gstate = GraphState.unflatten_from_const_size(flat_graph_state)
-
+        def _iter_fn(input_repr, gstate):
             # If necessary, update node state
             if self.nodes_mutable:
                 gstate = self.node_state_updater.process(gstate, input_repr)
@@ -131,17 +128,42 @@ class Model( object ):
 
             # Update edge state
             gstate = self.edge_state_updater.process(gstate, input_repr)
+            return gstate
+
+        # Scan over each sentence
+        def _scan_fn(input_repr, *stuff): # (input_repr, *flat_graph_state, pad_graph_size)
+            pad_graph_size = stuff[-1]
+            flat_graph_state = stuff[:-1]
+            gstate = GraphState.unflatten_from_const_size(flat_graph_state)
+
+            gstate = _iter_fn(input_repr, gstate)
 
             flat_gstate = gstate.flatten_to_const_size(pad_graph_size)
             return flat_gstate
 
-        # Account for all nodes, plus the extra padding node to prevent GPU unpleasantness
-        pad_graph_size = n_sentences * self.new_nodes_per_iter + 1
-        outputs_info = GraphState.create_empty(n_batch, self.node_state_size, self.edge_state_size).flatten_to_const_size(pad_graph_size)
-        prepped_input = input_reprs.dimshuffle([1,0,2])
-        all_flat_gstates, _ = theano.scan(_scan_fn, sequences=[prepped_input], outputs_info=outputs_info, non_sequences=[pad_graph_size])
-        final_flat_gstate = [x[-1] for x in all_flat_gstates]
-        final_gstate = GraphState.unflatten_from_const_size(final_flat_gstate)
+        if self.unroll_loop > 0:
+            all_gstates = []
+            n_batch_with_assert = T.opt.Assert("Maximum story length is {}".format(self.unroll_loop))(n_batch, T.le(n_sentences,self.unroll_loop))
+            cur_gstate = GraphState.create_empty(n_batch_with_assert, self.node_state_size, self.edge_state_size)
+            for i in range(self.unroll_loop):
+                condition = T.lt(i,n_sentences)
+                input_repr = input_reprs[:,i,:]
+                updated_gstate = _iter_fn(input_repr, cur_gstate)
+                flat_updated_gstate = updated_gstate.flatten()
+                flat_cur_gstate = cur_gstate.flatten()
+                flat_new_gstate = [theano.ifelse.ifelse(condition, upd, cur) for upd,cur in zip(flat_updated_gstate, flat_cur_gstate)]
+                new_gstate = GraphState.unflatten(flat_new_gstate)
+                all_gstates.append(new_gstate)
+                cur_gstate = new_gstate
+            final_gstate = cur_gstate
+        else:
+            # Account for all nodes, plus the extra padding node to prevent GPU unpleasantness
+            pad_graph_size = n_sentences * self.new_nodes_per_iter + 1
+            outputs_info = GraphState.create_empty(n_batch, self.node_state_size, self.edge_state_size).flatten_to_const_size(pad_graph_size)
+            prepped_input = input_reprs.dimshuffle([1,0,2])
+            all_flat_gstates, _ = theano.scan(_scan_fn, sequences=[prepped_input], outputs_info=outputs_info, non_sequences=[pad_graph_size])
+            final_flat_gstate = [x[-1] for x in all_flat_gstates]
+            final_gstate = GraphState.unflatten_from_const_size(final_flat_gstate)
 
         query_gstate = self.query_node_state_updater.process(final_gstate, query_repr)
         propagated_gstate = self.final_propagator.process_multiple(query_gstate, self.final_propagate)
@@ -164,10 +186,12 @@ class Model( object ):
 
         adam_updates = Adam(loss, self.params)
 
+        mode = theano.Mode().excluding("scanOp_pushout_output")
         self.train_fn = theano.function([input_words, query_words, correct_output],
                                         loss,
                                         updates=adam_updates,
-                                        allow_input_downcast=True
+                                        allow_input_downcast=True,
+                                        mode=mode)
 
         # self.eval_fn = theano.function( [input_words, query_words, correct_output],
         #                                 loss,
