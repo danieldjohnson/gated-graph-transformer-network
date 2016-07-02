@@ -28,16 +28,18 @@ class GraphState( object ):
     @classmethod
     def create_empty(cls, batch_size, node_state_size, edge_state_size):
         """
-        Create an empty graph state with the specified sizes
+        Create an empty graph state with the specified sizes. Note that this
+        will contain one zero-strength element to prevent nasty GPU errors
+        from a dimension with 0 in it.
 
             batch_size: Number of batches
             node_state_size: An integer giving size of node state
             edge_state_size: An integer givins size of edge state
         """
-        return cls( T.zeros([batch_size, 0]),
-                    T.zeros([batch_size, 0, node_state_size]),
-                    T.zeros([batch_size, 0, 0]),
-                    T.zeros([batch_size, 0, 0, edge_state_size]))
+        return cls( T.zeros([batch_size, 1]),
+                    T.zeros([batch_size, 1, node_state_size]),
+                    T.zeros([batch_size, 1, 1]),
+                    T.zeros([batch_size, 1, 1, edge_state_size]))
 
     @classmethod
     def create_empty_from_spec(cls, batch_size, spec):

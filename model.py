@@ -135,7 +135,8 @@ class Model( object ):
             flat_gstate = gstate.flatten_to_const_size(pad_graph_size)
             return flat_gstate
 
-        pad_graph_size = n_sentences * self.new_nodes_per_iter
+        # Account for all nodes, plus the extra padding node to prevent GPU unpleasantness
+        pad_graph_size = n_sentences * self.new_nodes_per_iter + 1
         outputs_info = GraphState.create_empty(n_batch, self.node_state_size, self.edge_state_size).flatten_to_const_size(pad_graph_size)
         prepped_input = input_reprs.dimshuffle([1,0,2])
         all_flat_gstates, _ = theano.scan(_scan_fn, sequences=[prepped_input], outputs_info=outputs_info, non_sequences=[pad_graph_size])
@@ -166,15 +167,15 @@ class Model( object ):
         self.train_fn = theano.function([input_words, query_words, correct_output],
                                         loss,
                                         updates=adam_updates,
-                                        allow_input_downcast=True)
+                                        allow_input_downcast=True
 
-        self.eval_fn = theano.function( [input_words, query_words, correct_output],
-                                        loss,
-                                        allow_input_downcast=True)
+        # self.eval_fn = theano.function( [input_words, query_words, correct_output],
+        #                                 loss,
+        #                                 allow_input_downcast=True)
 
-        self.test_fn = theano.function( [input_words, query_words],
-                                        [final_output] + all_flat_gstates,
-                                        allow_input_downcast=True)
+        # self.test_fn = theano.function( [input_words, query_words],
+        #                                 [final_output] + all_flat_gstates,
+        #                                 allow_input_downcast=True)
 
 
 
