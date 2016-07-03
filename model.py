@@ -106,6 +106,8 @@ class Model( object ):
         n_batch, n_sentences, sentence_len = input_words.shape
         # query_words: shape (n_batch, query_len)
         query_words = T.imatrix()
+        # correct_output: shape (n_batch, ?, num_output_words)
+        correct_output = T.ftensor3()
 
         # Process each sentence, flattened to (?, sentence_len)
         flat_input_words = input_words.reshape([-1, sentence_len])
@@ -168,10 +170,12 @@ class Model( object ):
         query_gstate = self.query_node_state_updater.process(final_gstate, query_repr)
         propagated_gstate = self.final_propagator.process_multiple(query_gstate, self.final_propagate)
         aggregated_repr = self.aggregator.process(propagated_gstate) # shape (n_batch, output_repr_size)
-        final_output = self.output_processor.process(aggregated_repr) # shape (n_batch, ?, num_output_words)
         
-        # correct_output: shape (n_batch, ?, num_output_words)
-        correct_output = T.ftensor3()
+        max_seq_len = correct_output.shape[1]
+        if self.output_format == ModelOutputFormat.sequence:
+            final_output = self.output_processor.process(aggregated_repr, max_seq_len) # shape (n_batch, ?, num_output_words)
+        else:
+            final_output = self.output_processor.process(aggregated_repr)
 
         if self.output_format == ModelOutputFormat.subset:
             elemwise_loss = T.nnet.binary_crossentropy(final_output, correct_output)
@@ -193,13 +197,15 @@ class Model( object ):
                                         allow_input_downcast=True,
                                         mode=mode)
 
-        # self.eval_fn = theano.function( [input_words, query_words, correct_output],
-        #                                 loss,
-        #                                 allow_input_downcast=True)
+        self.eval_fn = theano.function( [input_words, query_words, correct_output],
+                                        loss,
+                                        allow_input_downcast=True,
+                                        mode=mode)
 
-        # self.test_fn = theano.function( [input_words, query_words],
-        #                                 [final_output] + all_flat_gstates,
-        #                                 allow_input_downcast=True)
+        self.test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
+                                        [final_output] + all_flat_gstates + query_gstate.flatten() + propagated_gstate.flatten(),
+                                        allow_input_downcast=True,
+                                        mode=mode)
 
 
 
