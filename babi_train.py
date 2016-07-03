@@ -39,26 +39,41 @@ def get_effective_answer_words(answer_words, format_spec):
     else:
         return answer_words
 
-def assemble_batch(matching_stories, batch_size, num_answer_words, format_spec):
+def sample_batch(matching_stories, batch_size, num_answer_words, format_spec):
     sents, queries, answers = zip(*(random.choice(matching_stories) for _ in range(batch_size)))
+    return assemble_batch(sents, queries, answers, num_answer_words, format_spec)
+
+def assemble_batch(sents, queries, answers, num_answer_words, format_spec):
     cvtd_sents = np.array(sents, np.int32)
     cvtd_queries = np.array(queries, np.int32)
     max_ans_len = max(len(a) for a in answers)
     cvtd_answers = np.stack([convert_answer(answer, num_answer_words, format_spec, max_ans_len) for answer in answers])
     return cvtd_sents, cvtd_queries, cvtd_answers
 
+def visualize(m, story_buckets, wordlist, answerlist, output_format, outputdir, batch_size=1, seq_len=5):
+    cur_bucket = random.choice(story_buckets)
+    sampled_batch = sample_batch(cur_bucket, batch_size, len(answerlist), output_format)
+    with open(os.path.join(outputdir,'stories.txt'),'w') as f:
+        babi_parse.print_batch(sampled_batch, wordlist, answerlist, file=f)
+    with open(os.path.join(outputdir,'answer_list.txt'),'w') as f:
+        f.write('\n'.join(answerlist) + '\n')
+    args = sampled_batch[:2] + ((seq_len,) if output_format == model.ModelOutputFormat.sequence else ())
+    results = m.test_fn(*args)
+    for i,result in enumerate(results):
+        np.save(os.path.join(outputdir,'result_{}.npy'.format(i)), result)
+
 def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE):
     with GracefulInterruptHandler() as interrupt_h:
         for i in range(start+1,start+num_updates+1):
             cur_bucket = random.choice(story_buckets)
-            sampled_batch = assemble_batch(cur_bucket, batch_size, len_answers, output_format)
+            sampled_batch = sample_batch(cur_bucket, batch_size, len_answers, output_format)
             loss = m.train_fn(*sampled_batch)
             with open(os.path.join(outputdir,'data.csv'),'a') as f:
                 if i == 1:
                     f.seek(0)
                     f.truncate()
                     f.write("iter, loss, \n")
-                f.write("{}, {}".format(i,loss))
+                f.write("{}, {}\n".format(i,loss))
             if i % 1 == 0:
                 print("update {}: {}".format(i,loss))
             if i % 1000 == 0:

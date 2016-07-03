@@ -202,8 +202,12 @@ class Model( object ):
                                         allow_input_downcast=True,
                                         mode=mode)
 
+        full_flat_gstates = [T.concatenate([a,T.shape_padleft(b),T.shape_padleft(c)],0).swapaxes(0,1)
+                                for a,b,c in zip(all_flat_gstates,
+                                                 query_gstate.flatten(),
+                                                 propagated_gstate.flatten())]
         self.test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
-                                        [final_output] + all_flat_gstates + query_gstate.flatten() + propagated_gstate.flatten(),
+                                        [final_output] + full_flat_gstates,
                                         allow_input_downcast=True,
                                         mode=mode)
 

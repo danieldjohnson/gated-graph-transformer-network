@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import collections
 import numpy as np
@@ -110,11 +111,11 @@ def prepare_stories(stories):
     bucketed = bucket_stories(stories, buckets, wordmap, ansmap, sentence_length)
     return sentence_length, buckets, wordlist, anslist, bucketed
 
-def print_batch(story, wordlist, anslist):
+def print_batch(story, wordlist, anslist, file=sys.stdout):
     sents, query, answer = story
     for batch,(s,q,a) in enumerate(zip(sents,query,answer)):
-        print("Story {}".format(batch))
+        file.write("Story {}\n".format(batch))
         for sent in s:
-            print(" ".join([wordlist[word] for word in sent]))
-        print(" ".join(wordlist[word] for word in q))
-        print(" ".join(anslist[word] for word in a))
+            file.write(" ".join([wordlist[word] for word in sent]) + "\n")
+        file.write(" ".join(wordlist[word] for word in q) + "\n")
+        file.write(" ".join(anslist[word] for word in a.nonzero()[1]) + "\n")
