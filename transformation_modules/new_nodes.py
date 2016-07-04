@@ -23,7 +23,7 @@ class NewNodesTransformation( object ):
         self._proposer_gru = BaseGRULayer(input_width, graph_spec.node_state_size + 1, proposer_shift, name="newnodes_proposer")
 
         self._vote_W = theano.shared(init_params([2*graph_spec.node_state_size, 1]), "newnodes_vote_W")
-        self._vote_b = theano.shared(init_params([1], shift=1.0), "newnodes_vote_b")
+        self._vote_b = theano.shared(init_params([1], shift=-1.0), "newnodes_vote_b")
 
     @property
     def params(self):
@@ -71,10 +71,10 @@ class NewNodesTransformation( object ):
         full_vote_input = broadcast_concat([node_state_part, candidate_state_part], 3)
         flat_vote_input = full_vote_input.reshape([-1, 2*self._graph_spec.node_state_size])
         vote_result = do_layer(T.nnet.sigmoid, flat_vote_input, self._vote_W, self._vote_b)
-        final_votes = vote_result.reshape([max_candidates, n_batch, n_nodes])
-
+        final_votes_no = vote_result.reshape([max_candidates, n_batch, n_nodes])
+        weighted_votes_yes = 1 - final_votes_no * T.shape_padleft(gstate.node_strengths)
         # Add in the strength vote
-        all_votes = T.concatenate([T.shape_padright(candidate_strengths), final_votes], 2)
+        all_votes = T.concatenate([T.shape_padright(candidate_strengths), weighted_votes_yes], 2)
         # Take the product -> (candidate, n_batch)
         chosen_strengths = T.prod(all_votes, 2)
 
