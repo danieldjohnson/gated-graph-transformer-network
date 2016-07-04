@@ -26,7 +26,14 @@ class EdgeStateUpdateTransformation( object ):
     def params(self):
         return self._update_gru.params
 
-    def process(self, gstate, input_vector):
+    @property
+    def num_dropout_masks(self):
+        return self._update_gru.num_dropout_masks
+
+    def get_dropout_masks(self, srng, keep_frac):
+        return self._update_gru.get_dropout_masks(srng, keep_frac)
+
+    def process(self, gstate, input_vector, dropout_masks=None):
         """
         Process an input vector and update the state accordingly. Each node runs a GRU step
         with previous state from the node state and input from the vector.
@@ -47,7 +54,7 @@ class EdgeStateUpdateTransformation( object ):
         flat_input = full_input.reshape([-1, self._process_input_size])
         flat_state = gstate.edge_states.reshape([-1, self._graph_spec.edge_state_size])
         flat_strength = gstate.edge_strengths.flatten()
-        new_flat_state, new_flat_strength = self._update_gru.step(flat_input, flat_state, flat_strength)
+        new_flat_state, new_flat_strength = self._update_gru.step(flat_input, flat_state, flat_strength, dropout_masks)
 
         new_edge_states = new_flat_state.reshape(gstate.edge_states.shape)
         new_edge_strengths = new_flat_strength.reshape(gstate.edge_strengths.shape)

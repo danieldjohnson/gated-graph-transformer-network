@@ -33,7 +33,14 @@ class PropagationTransformation( object ):
     def params(self):
         return self._propagation_gru.params + [self._transfer_fwd_W, self._transfer_fwd_b, self._transfer_bwd_W, self._transfer_bwd_b]
 
-    def process(self, gstate):
+    @property
+    def num_dropout_masks(self):
+        return self._propagation_gru.num_dropout_masks
+
+    def get_dropout_masks(self, srng, keep_frac):
+        return self._propagation_gru.get_dropout_masks(srng, keep_frac)
+
+    def process(self, gstate, dropout_masks=None):
         """
         Process a graph state.
           1. Data is transfered from each node to each other node along both forward and backward edges.
@@ -74,14 +81,14 @@ class PropagationTransformation( object ):
         # we flatten to apply GRU
         flat_input = reduced_result.reshape([-1, self._transfer_size])
         flat_state = gstate.node_states.reshape([-1, self._graph_spec.node_state_size])
-        new_flat_state = self._propagation_gru.step(flat_input, flat_state)
+        new_flat_state = self._propagation_gru.step(flat_input, flat_state, dropout_masks)
 
         new_node_states = new_flat_state.reshape(gstate.node_states.shape)
 
         new_gstate = gstate.with_updates(node_states=new_node_states)
         return new_gstate
 
-    def process_multiple(self, gstate, iterations):
+    def process_multiple(self, gstate, iterations, dropout_masks=None):
         """
         Run multiple propagagtion steps.
 
@@ -90,12 +97,12 @@ class PropagationTransformation( object ):
             iterations: An integer. How many steps to propagate
         """
 
-        def _scan_step(cur_node_states, node_strengths, edge_strengths, edge_states):
+        def _scan_step(cur_node_states, node_strengths, edge_strengths, edge_states, *dmasks):
             curstate = GraphState(node_strengths, cur_node_states, edge_strengths, edge_states)
-            return self.process(curstate).node_states
+            return self.process(curstate, dmasks if dropout_masks is not None else None).node_states
 
         outputs_info = [gstate.node_states]
-        all_node_states, _ = theano.scan(_scan_step, n_steps=iterations, non_sequences=[gstate.node_strengths, gstate.edge_strengths, gstate.edge_states], outputs_info=outputs_info)
+        all_node_states, _ = theano.scan(_scan_step, n_steps=iterations, non_sequences=[gstate.node_strengths, gstate.edge_strengths, gstate.edge_states] + (dropout_masks if dropout_masks is not None else []), outputs_info=outputs_info)
 
         final_gstate = gstate.with_updates(node_states=all_node_states[-1,:,:,:])
         return final_gstate

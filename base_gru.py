@@ -50,16 +50,33 @@ class BaseGRULayer( object ):
         """
         return T.zeros([batch_size, self.output_width])
 
-    def step(self, ipt, state):
+    @property
+    def num_dropout_masks(self):
+        return 2
+
+    def get_dropout_masks(self, srng, keep_frac):
+        """
+        Get dropout masks for the GRU.
+        """
+        return [T.shape_padleft(T.cast(srng.binomial((self._input_width,), p=keep_frac), 'float32') / keep_frac),
+                T.shape_padleft(T.cast(srng.binomial((self._output_width,), p=keep_frac), 'float32') / keep_frac)]
+
+    def step(self, ipt, state, dropout_masks=None):
         """
         Perform a single step of the network
 
         Params:
             ipt: The current input. Should be an int tensor of shape (n_batch, self.input_width)
             state: The previous state. Should be a float tensor of shape (n_batch, self.output_width)
+            dropout_masks: Masks from get_dropout_masks
 
         Returns: The next output state
         """
+        if dropout_masks is not None:
+            ipt_masks, state_masks = dropout_masks
+            ipt = ipt*ipt_masks
+            state = state*state_masks
+
         cat_ipt_state = T.concatenate([ipt, state], 1)
         reset = do_layer( T.nnet.sigmoid, cat_ipt_state,
                             self._reset_W, self._reset_b )

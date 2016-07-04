@@ -18,7 +18,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, node_state_size, edge_state_size, input_repr_size, output_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, nodes_mutable=True, intermediate_propagate=0, unroll_loop=0, setup=True):
+    def __init__(self, num_input_words, num_output_words, node_state_size, edge_state_size, input_repr_size, output_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, nodes_mutable=True, intermediate_propagate=0, unroll_loop=0, dropout_keep=1, setup=True):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -34,6 +34,7 @@ class Model( object ):
             intermediate_propagate: How many steps to propagate info for each input sentence
             nodes_mutable: Whether nodes should update their state based on input
             unroll_loop: How many timesteps to unroll the main loop, or 0 to use scan
+            dropout_keep: Probability to keep a node in dropout
             setup: Whether or not to automatically set up the model
         """
         self.num_input_words = num_input_words
@@ -49,6 +50,7 @@ class Model( object ):
         self.intermediate_propagate = intermediate_propagate
         self.nodes_mutable = nodes_mutable
         self.unroll_loop = unroll_loop
+        self.dropout_keep = np.float32(dropout_keep)
 
         graphspec = GraphStateSpec(self.node_state_size, self.edge_state_size)
 
@@ -80,6 +82,8 @@ class Model( object ):
         self.aggregator = tfms.AggregateRepresentationTransformation(output_repr_size, graphspec)
         self.parameterized.append(self.aggregator)
 
+        self.srng = theano.sandbox.rng_mrg.MRG_RandomStreams(np.random.randint(0, 1024))
+
         assert output_format in ModelOutputFormat, "Invalid output format {}".format(output_format)
         if output_format == ModelOutputFormat.category:
             self.output_processor = tfms.OutputCategoryTransformation(output_repr_size, num_output_words)
@@ -109,103 +113,149 @@ class Model( object ):
         # correct_output: shape (n_batch, ?, num_output_words)
         correct_output = T.ftensor3()
 
-        # Process each sentence, flattened to (?, sentence_len)
-        flat_input_words = input_words.reshape([-1, sentence_len])
-        flat_input_reprs = self.input_transformer.process(flat_input_words) # shape (?, input_repr_size)
-        input_reprs = flat_input_reprs.reshape([n_batch, n_sentences, self.input_repr_size])
-
-        query_repr = self.input_transformer.process(query_words)
-
-        def _iter_fn(input_repr, gstate):
-            # If necessary, update node state
-            if self.nodes_mutable:
-                gstate = self.node_state_updater.process(gstate, input_repr)
-
-            # If necessary, propagate node state
-            if self.intermediate_propagate != 0:
-                gstate = self.intermediate_propagator.process_multiple(gstate, self.intermediate_propagate)
-
-            # Propose and vote on new nodes
-            gstate = self.new_node_adder.process(gstate, input_repr, self.new_nodes_per_iter)
-
-            # Update edge state
-            gstate = self.edge_state_updater.process(gstate, input_repr)
-            return gstate
-
-        # Scan over each sentence
-        def _scan_fn(input_repr, *stuff): # (input_repr, *flat_graph_state, pad_graph_size)
-            pad_graph_size = stuff[-1]
-            flat_graph_state = stuff[:-1]
-            gstate = GraphState.unflatten_from_const_size(flat_graph_state)
-
-            gstate = _iter_fn(input_repr, gstate)
-
-            flat_gstate = gstate.flatten_to_const_size(pad_graph_size)
-            return flat_gstate
-
-        if self.unroll_loop > 0:
-            all_gstates = []
-            n_batch_with_assert = T.opt.Assert("Maximum story length is {}".format(self.unroll_loop))(n_batch, T.le(n_sentences,self.unroll_loop))
-            cur_gstate = GraphState.create_empty(n_batch_with_assert, self.node_state_size, self.edge_state_size)
-            for i in range(self.unroll_loop):
-                condition = T.lt(i,n_sentences)
-                input_repr = input_reprs[:,i,:]
-                updated_gstate = _iter_fn(input_repr, cur_gstate)
-                flat_updated_gstate = updated_gstate.flatten()
-                flat_cur_gstate = cur_gstate.flatten()
-                flat_new_gstate = [theano.ifelse.ifelse(condition, upd, cur) for upd,cur in zip(flat_updated_gstate, flat_cur_gstate)]
-                new_gstate = GraphState.unflatten(flat_new_gstate)
-                all_gstates.append(new_gstate)
-                cur_gstate = new_gstate
-            final_gstate = cur_gstate
-        else:
-            # Account for all nodes, plus the extra padding node to prevent GPU unpleasantness
-            pad_graph_size = n_sentences * self.new_nodes_per_iter + 1
-            outputs_info = GraphState.create_empty(n_batch, self.node_state_size, self.edge_state_size).flatten_to_const_size(pad_graph_size)
-            prepped_input = input_reprs.dimshuffle([1,0,2])
-            all_flat_gstates, _ = theano.scan(_scan_fn, sequences=[prepped_input], outputs_info=outputs_info, non_sequences=[pad_graph_size])
-            final_flat_gstate = [x[-1] for x in all_flat_gstates]
-            final_gstate = GraphState.unflatten_from_const_size(final_flat_gstate)
-
-        query_gstate = self.query_node_state_updater.process(final_gstate, query_repr)
-        propagated_gstate = self.final_propagator.process_multiple(query_gstate, self.final_propagate)
-        aggregated_repr = self.aggregator.process(propagated_gstate) # shape (n_batch, output_repr_size)
-        
-        max_seq_len = correct_output.shape[1]
+        # Get all dropout masks
+        if self.nodes_mutable:
+            node_state_updater_dropout = self.node_state_updater.get_dropout_masks(self.srng, self.dropout_keep)
+        if self.intermediate_propagate != 0:
+            intermediate_propagator_dropout = self.intermediate_propagator.get_dropout_masks(self.srng, self.dropout_keep)
+        new_node_adder_dropout = self.new_node_adder.get_dropout_masks(self.srng, self.dropout_keep)
+        edge_state_updater_dropout = self.edge_state_updater.get_dropout_masks(self.srng, self.dropout_keep)
+        query_node_state_updater_dropout = self.query_node_state_updater.get_dropout_masks(self.srng, self.dropout_keep)
+        final_propagator_dropout = self.final_propagator.get_dropout_masks(self.srng, self.dropout_keep)
         if self.output_format == ModelOutputFormat.sequence:
-            final_output = self.output_processor.process(aggregated_repr, max_seq_len) # shape (n_batch, ?, num_output_words)
-        else:
-            final_output = self.output_processor.process(aggregated_repr)
+            output_processor_dropout = self.output_processor.get_dropout_masks(self.srng, self.dropout_keep)
 
-        if self.output_format == ModelOutputFormat.subset:
-            elemwise_loss = T.nnet.binary_crossentropy(final_output, correct_output)
-            full_loss = T.sum(elemwise_loss)
-        else:
-            flat_final_output = final_output.reshape([-1, self.num_output_words])
-            flat_correct_output = correct_output.reshape([-1, self.num_output_words])
-            timewise_loss = T.nnet.categorical_crossentropy(flat_final_output, flat_correct_output)
-            full_loss = T.sum(timewise_loss)
+        def _build(with_dropout):
+            # Process each sentence, flattened to (?, sentence_len)
+            flat_input_words = input_words.reshape([-1, sentence_len])
+            flat_input_reprs = self.input_transformer.process(flat_input_words) # shape (?, input_repr_size)
+            input_reprs = flat_input_reprs.reshape([n_batch, n_sentences, self.input_repr_size])
 
-        loss = full_loss/T.cast(n_batch, 'float32')
+            query_repr = self.input_transformer.process(query_words)
 
-        adam_updates = Adam(loss, self.params)
+            def _iter_fn(input_repr, gstate, all_dropouts):
+                # If necessary, update node state
+                if self.nodes_mutable:
+                    num_dropout = self.node_state_updater.num_dropout_masks
+                    if with_dropout:
+                        cur_dropout = all_dropouts[:num_dropout]
+                        all_dropouts = all_dropouts[num_dropout:]
+                    else:
+                        cur_dropout = None
+                    gstate = self.node_state_updater.process(gstate, input_repr, cur_dropout)
+
+                # If necessary, propagate node state
+                if self.intermediate_propagate != 0:
+                    num_dropout = self.intermediate_propagator.num_dropout_masks
+                    if with_dropout:
+                        cur_dropout = all_dropouts[:num_dropout]
+                        all_dropouts = all_dropouts[num_dropout:]
+                    else:
+                        cur_dropout = None
+                    gstate = self.intermediate_propagator.process_multiple(gstate, self.intermediate_propagate, cur_dropout)
+
+                # Propose and vote on new nodes
+                num_dropout = self.new_node_adder.num_dropout_masks
+                if with_dropout:
+                    cur_dropout = all_dropouts[:num_dropout]
+                    all_dropouts = all_dropouts[num_dropout:]
+                else:
+                    cur_dropout = None
+                gstate = self.new_node_adder.process(gstate, input_repr, self.new_nodes_per_iter, cur_dropout)
+
+                # Update edge state
+                num_dropout = self.edge_state_updater.num_dropout_masks
+                if with_dropout:
+                    cur_dropout = all_dropouts[:num_dropout]
+                    all_dropouts = all_dropouts[num_dropout:]
+                else:
+                    cur_dropout = None
+                gstate = self.edge_state_updater.process(gstate, input_repr, cur_dropout)
+                return gstate
+
+            # Scan over each sentence
+            def _scan_fn(input_repr, *stuff): # (input_repr, *flat_graph_state, pad_graph_size, *dropouts)
+                flat_graph_state = stuff[:GraphState.const_flattened_length()]
+                pad_graph_size = stuff[GraphState.const_flattened_length()]
+                dropouts = list(stuff[GraphState.const_flattened_length()+1:])
+                gstate = GraphState.unflatten_from_const_size(flat_graph_state)
+
+                gstate = _iter_fn(input_repr, gstate, dropouts)
+
+                flat_gstate = gstate.flatten_to_const_size(pad_graph_size)
+                return flat_gstate
+
+            all_dropouts = (node_state_updater_dropout if self.nodes_mutable else []) \
+                         + (intermediate_propagator_dropout if self.intermediate_propagate != 0 else []) \
+                         + new_node_adder_dropout \
+                         + edge_state_updater_dropout
+            if self.unroll_loop > 0:
+                all_gstates = []
+                n_batch_with_assert = T.opt.Assert("Maximum story length is {}".format(self.unroll_loop))(n_batch, T.le(n_sentences,self.unroll_loop))
+                cur_gstate = GraphState.create_empty(n_batch_with_assert, self.node_state_size, self.edge_state_size)
+                for i in range(self.unroll_loop):
+                    condition = T.lt(i,n_sentences)
+                    input_repr = input_reprs[:,i,:]
+                    updated_gstate = _iter_fn(input_repr, cur_gstate, all_dropouts)
+                    flat_updated_gstate = updated_gstate.flatten()
+                    flat_cur_gstate = cur_gstate.flatten()
+                    flat_new_gstate = [theano.ifelse.ifelse(condition, upd, cur) for upd,cur in zip(flat_updated_gstate, flat_cur_gstate)]
+                    new_gstate = GraphState.unflatten(flat_new_gstate)
+                    all_gstates.append(new_gstate)
+                    cur_gstate = new_gstate
+                final_gstate = cur_gstate
+            else:
+                # Account for all nodes, plus the extra padding node to prevent GPU unpleasantness
+                pad_graph_size = n_sentences * self.new_nodes_per_iter + 1
+                outputs_info = GraphState.create_empty(n_batch, self.node_state_size, self.edge_state_size).flatten_to_const_size(pad_graph_size)
+                prepped_input = input_reprs.dimshuffle([1,0,2])
+                all_flat_gstates, _ = theano.scan(_scan_fn, sequences=[prepped_input], outputs_info=outputs_info, non_sequences=[pad_graph_size]+all_dropouts)
+                final_flat_gstate = [x[-1] for x in all_flat_gstates]
+                final_gstate = GraphState.unflatten_from_const_size(final_flat_gstate)
+
+            query_gstate = self.query_node_state_updater.process(final_gstate, query_repr, query_node_state_updater_dropout if with_dropout else None)
+            propagated_gstate = self.final_propagator.process_multiple(query_gstate, self.final_propagate, final_propagator_dropout if with_dropout else None)
+            aggregated_repr = self.aggregator.process(propagated_gstate) # shape (n_batch, output_repr_size)
+            
+            max_seq_len = correct_output.shape[1]
+            if self.output_format == ModelOutputFormat.sequence:
+                final_output = self.output_processor.process(aggregated_repr, max_seq_len) # shape (n_batch, ?, num_output_words)
+            else:
+                final_output = self.output_processor.process(aggregated_repr)
+
+            if self.output_format == ModelOutputFormat.subset:
+                elemwise_loss = T.nnet.binary_crossentropy(final_output, correct_output)
+                full_loss = T.sum(elemwise_loss)
+            else:
+                flat_final_output = final_output.reshape([-1, self.num_output_words])
+                flat_correct_output = correct_output.reshape([-1, self.num_output_words])
+                timewise_loss = T.nnet.categorical_crossentropy(flat_final_output, flat_correct_output)
+                full_loss = T.sum(timewise_loss)
+
+            loss = full_loss/T.cast(n_batch, 'float32')
+
+            full_flat_gstates = [T.concatenate([a,T.shape_padleft(b),T.shape_padleft(c)],0).swapaxes(0,1)
+                                    for a,b,c in zip(all_flat_gstates,
+                                                     query_gstate.flatten(),
+                                                     propagated_gstate.flatten())]
+            return loss, final_output, full_flat_gstates, max_seq_len
+
+        train_loss, _, _, _ = _build(True)
+        adam_updates = Adam(train_loss, self.params)
 
         mode = theano.Mode().excluding("scanOp_pushout_output")
         self.train_fn = theano.function([input_words, query_words, correct_output],
-                                        loss,
+                                        train_loss,
                                         updates=adam_updates,
                                         allow_input_downcast=True,
                                         mode=mode)
 
+        eval_loss, final_output, full_flat_gstates, max_seq_len = _build(False)
         self.eval_fn = theano.function( [input_words, query_words, correct_output],
-                                        loss,
+                                        eval_loss,
                                         allow_input_downcast=True,
                                         mode=mode)
 
-        full_flat_gstates = [T.concatenate([a,T.shape_padleft(b),T.shape_padleft(c)],0).swapaxes(0,1)
-                                for a,b,c in zip(all_flat_gstates,
-                                                 query_gstate.flatten(),
-                                                 propagated_gstate.flatten())]
         self.test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
                                         [final_output] + full_flat_gstates,
                                         allow_input_downcast=True,

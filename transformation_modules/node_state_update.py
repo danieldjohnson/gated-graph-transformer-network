@@ -25,7 +25,14 @@ class NodeStateUpdateTransformation( object ):
     def params(self):
         return self._update_gru.params
 
-    def process(self, gstate, input_vector):
+    @property
+    def num_dropout_masks(self):
+        return self._update_gru.num_dropout_masks
+
+    def get_dropout_masks(self, srng, keep_frac):
+        return self._update_gru.get_dropout_masks(srng, keep_frac)
+
+    def process(self, gstate, input_vector, dropout_masks=None):
         """
         Process an input vector and update the state accordingly. Each node runs a GRU step
         with previous state from the node state and input from the vector.
@@ -42,7 +49,7 @@ class NodeStateUpdateTransformation( object ):
         # we flatten to apply GRU
         flat_input = prepped_input_vector.reshape([-1, self._input_width])
         flat_state = gstate.node_states.reshape([-1, self._graph_spec.node_state_size])
-        new_flat_state = self._update_gru.step(flat_input, flat_state)
+        new_flat_state = self._update_gru.step(flat_input, flat_state, dropout_masks)
 
         new_node_states = new_flat_state.reshape(gstate.node_states.shape)
 

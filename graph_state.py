@@ -90,6 +90,10 @@ class GraphState( object ):
     def unflatten(cls, vals):
         return cls(*vals)
 
+    @classmethod
+    def const_flattened_length(cls):
+        return 5
+
     def flatten_to_const_size(self, const_n_nodes):
         exp_node_strengths = pad_to(self.node_strengths, [self.n_batch, const_n_nodes])
         exp_node_states = pad_to(self.node_states, [self.n_batch, const_n_nodes, self.node_state_width])

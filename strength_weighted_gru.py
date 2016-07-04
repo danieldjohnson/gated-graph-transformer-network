@@ -45,7 +45,18 @@ class StrengthWeightedGRULayer( object ):
     def params(self):
         return [self._reset_W, self._reset_b, self._update_W, self._update_b, self._activation_W, self._activation_b, self._strength_W, self._strength_b]
 
-    def step(self, ipt, state, state_strength):
+    @property
+    def num_dropout_masks(self):
+        return 2
+
+    def get_dropout_masks(self, srng, keep_frac):
+        """
+        Get dropout masks for the GRU.
+        """
+        return [T.shape_padleft(T.cast(srng.binomial((self._input_width,), p=keep_frac), 'float32') / keep_frac),
+                T.shape_padleft(T.cast(srng.binomial((self._output_width,), p=keep_frac), 'float32') / keep_frac)]
+
+    def step(self, ipt, state, state_strength, dropout_masks=None):
         """
         Perform a single step of the network
 
@@ -54,9 +65,15 @@ class StrengthWeightedGRULayer( object ):
             state: The previous state. Should be a float tensor of shape (n_batch, self.output_width)
             state_strength: Strength of the previous state. Should be a float tensor of shape
                 (n_batch)
+            dropout_masks: Masks from get_dropout_masks
 
         Returns: The next output state, and the next output strength
         """
+        if dropout_masks is not None:
+            ipt_masks, state_masks = dropout_masks
+            ipt = ipt*ipt_masks
+            state = state*state_masks
+
         obs_state = state * T.shape_padright(state_strength)
         cat_ipt_state = T.concatenate([ipt, obs_state], 1)
         reset = do_layer( T.nnet.sigmoid, cat_ipt_state,

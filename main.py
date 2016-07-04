@@ -31,6 +31,7 @@ def main(task_fn, output_format_str, mutable_nodes, propagate_intermediate, outp
                     final_propagate=5,
                     nodes_mutable=mutable_nodes,
                     intermediate_propagate=(5 if propagate_intermediate else 0),
+                    dropout_keep=0.5,
                     setup=True)
 
     if resume_auto:

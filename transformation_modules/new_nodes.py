@@ -29,7 +29,14 @@ class NewNodesTransformation( object ):
     def params(self):
         return self._proposer_gru.params + [self._vote_W, self._vote_b]
 
-    def process(self, gstate, input_vector, max_candidates):
+    @property
+    def num_dropout_masks(self):
+        return self._proposer_gru.num_dropout_masks
+
+    def get_dropout_masks(self, srng, keep_frac):
+        return self._proposer_gru.get_dropout_masks(srng, keep_frac)
+
+    def process(self, gstate, input_vector, max_candidates, dropout_masks=None):
         """
         Process an input vector and update the state accordingly. This is accomplished as follows:
           1. The proposer network, conditioned on the input vector, proposes multiple candidate nodes,
@@ -48,8 +55,8 @@ class NewNodesTransformation( object ):
         n_batch = gstate.n_batch
         n_nodes = gstate.n_nodes
         outputs_info = [self._proposer_gru.initial_state(n_batch)]
-        proposer_step = lambda st,ipt: self._proposer_gru.step(ipt,st)
-        candidates, _ = theano.scan(proposer_step, n_steps=max_candidates, non_sequences=[input_vector], outputs_info=outputs_info)
+        proposer_step = lambda st,ipt,*dm: self._proposer_gru.step(ipt,st,dm if dropout_masks is not None else None)
+        candidates, _ = theano.scan(proposer_step, n_steps=max_candidates, non_sequences=[input_vector]+(dropout_masks if dropout_masks is not None else []), outputs_info=outputs_info)
 
         # Candidates is of shape (candidate, n_batch, node_state_size + 1)
         # Our candidate states are just the first parts (candidate, n_batch, node_state_size)
