@@ -62,7 +62,7 @@ def visualize(m, story_buckets, wordlist, answerlist, output_format, outputdir, 
     for i,result in enumerate(results):
         np.save(os.path.join(outputdir,'result_{}.npy'.format(i)), result)
 
-def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE):
+def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None):
     with GracefulInterruptHandler() as interrupt_h:
         for i in range(start+1,start+num_updates+1):
             cur_bucket = random.choice(story_buckets)
@@ -77,6 +77,13 @@ def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, 
             if i % 1 == 0:
                 print("update {}: {}".format(i,loss))
             if i % 1000 == 0:
+                if validation_buckets is not None:
+                    cur_bucket = random.choice(validation_buckets)
+                    sampled_batch = sample_batch(cur_bucket, batch_size, len_answers, output_format)
+                    valid_loss = m.eval_fn(*sampled_batch)
+                    print("validation at {}: {}".format(i,valid_loss))
+                    with open(os.path.join(outputdir,'valid.csv'),'a') as f:
+                        f.write("{}, {}\n".format(i,valid_loss))
                 pickle.dump(m.params, open(os.path.join(outputdir, 'params{}.p'.format(i)), 'wb'))
             if interrupt_h.interrupted:
                 break
