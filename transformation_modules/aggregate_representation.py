@@ -13,7 +13,7 @@ class AggregateRepresentationTransformation( object ):
         self._representation_width = representation_width
         self._graph_spec = graph_spec
 
-        self._representation_W = theano.shared(init_params([graph_spec.node_state_size, representation_width+1]), "aggregaterepr_W")
+        self._representation_W = theano.shared(init_params([graph_spec.num_node_ids + graph_spec.node_state_size, representation_width+1]), "aggregaterepr_W")
         self._representation_b = theano.shared(init_params([representation_width+1]), "aggregaterepr_b")
 
     @property
@@ -30,8 +30,10 @@ class AggregateRepresentationTransformation( object ):
         Returns: A representation vector of shape (n_batch, representation_width)
         """
 
-        flat_states = gstate.node_states.reshape([-1, self._graph_spec.node_state_size])
-        flat_activations = do_layer(lambda x:x, flat_states, self._representation_W, self._representation_b)
+        flat_obs = T.concatenate([
+                        gstate.node_ids.reshape([-1, self._graph_spec.num_node_ids]),
+                        gstate.node_states.reshape([-1, self._graph_spec.node_state_size])], 1)
+        flat_activations = do_layer(lambda x:x, flat_obs, self._representation_W, self._representation_b)
         activations = flat_activations.reshape([gstate.n_batch, gstate.n_nodes, self._representation_width+1])
 
         activation_strengths = activations[:,:,0]

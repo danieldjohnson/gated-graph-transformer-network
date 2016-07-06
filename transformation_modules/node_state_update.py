@@ -19,7 +19,7 @@ class NodeStateUpdateTransformation( object ):
         self._input_width = input_width
         self._graph_spec = graph_spec
 
-        self._update_gru = BaseGRULayer(input_width, graph_spec.node_state_size, name="nodestateupdate")
+        self._update_gru = BaseGRULayer(input_width + graph_spec.num_node_ids, graph_spec.node_state_size, name="nodestateupdate")
 
     @property
     def params(self):
@@ -45,9 +45,10 @@ class NodeStateUpdateTransformation( object ):
         # gstate.node_states is of shape (n_batch, n_nodes, node_state_width)
         # input_vector should be broadcasted to match this
         prepped_input_vector = T.tile(T.shape_padaxis(input_vector, 1), [1, gstate.n_nodes, 1])
+        full_input = T.concatenate([gstate.node_ids, prepped_input_vector], 2)
 
         # we flatten to apply GRU
-        flat_input = prepped_input_vector.reshape([-1, self._input_width])
+        flat_input = full_input.reshape([-1, self._input_width + self._graph_spec.num_node_ids])
         flat_state = gstate.node_states.reshape([-1, self._graph_spec.node_state_size])
         new_flat_state = self._update_gru.step(flat_input, flat_state, dropout_masks)
 

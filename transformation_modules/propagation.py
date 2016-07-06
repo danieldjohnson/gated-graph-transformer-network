@@ -20,18 +20,16 @@ class PropagationTransformation( object ):
         self._transfer_size = transfer_size
         self._transfer_activation = transfer_activation
         self._graph_spec = graph_spec
-        self._process_input_size = graph_spec.node_state_size + graph_spec.edge_state_size
+        self._process_input_size = graph_spec.num_node_ids + graph_spec.node_state_size
 
-        self._transfer_fwd_W = theano.shared(init_params([self._process_input_size, transfer_size]), "propagation_transfer_fwd_W")
-        self._transfer_fwd_b = theano.shared(init_params([transfer_size]), "propagation_transfer_fwd_b")
-        self._transfer_bwd_W = theano.shared(init_params([self._process_input_size, transfer_size]), "propagation_transfer_bwd_W")
-        self._transfer_bwd_b = theano.shared(init_params([transfer_size]), "propagation_transfer_bwd_b")
+        self._transfer_W = theano.shared(init_params([self._process_input_size, 2 * graph_spec.num_edge_types * transfer_size]), "propagation_transfer_W")
+        self._transfer_b = theano.shared(init_params([2 * graph_spec.num_edge_types * transfer_size]), "propagation_transfer_b")
 
-        self._propagation_gru = BaseGRULayer(self._transfer_size, graph_spec.node_state_size, name="propagation")
+        self._propagation_gru = BaseGRULayer(graph_spec.num_node_ids + self._transfer_size, graph_spec.node_state_size, name="propagation")
 
     @property
     def params(self):
-        return self._propagation_gru.params + [self._transfer_fwd_W, self._transfer_fwd_b, self._transfer_bwd_W, self._transfer_bwd_b]
+        return self._propagation_gru.params + [self._transfer_W, self._transfer_b]
 
     @property
     def num_dropout_masks(self):
@@ -52,34 +50,27 @@ class PropagationTransformation( object ):
             gstate: A GraphState giving the current state
         """
 
-        def helper_transform(aligned_source_part, transfer_W, transfer_b):
-            # combined input should be broadcasted to (n_batch, n_nodes, n_nodes, X)
-            edge_state_part = gstate.edge_states
-            full_input = broadcast_concat([aligned_source_part, edge_state_part], 3)
-            flat_input = full_input.reshape([-1, self._process_input_size])
-            transformed = do_layer(self._transfer_activation, flat_input, transfer_W, transfer_b)\
-                            .reshape([gstate.n_batch, gstate.n_nodes, gstate.n_nodes, self._transfer_size])
-            # now transformed has shape (n_batch, n_nodes, n_nodes, _transfer_size)
-            # scale by edge strength
-            edge_strength_scale = T.shape_padright(gstate.edge_strengths)
-            return transformed * edge_strength_scale
+        node_obs = T.concatenate([gstate.node_ids, gstate.node_states],2)
+        flat_node_obs = node_obs.reshape([-1, self._process_input_size])
+        transformed = do_layer(self._transfer_activation, flat_node_obs, self._transfer_W, self._transfer_b)\
+                            .reshape([gstate.n_batch, gstate.n_nodes, 2*self._graph_spec.num_edge_types, self._transfer_size])
+        scaled_transformed = transformed * T.shape_padright(T.shape_padright(gstate.node_strengths))
+        # scaled_transformed is of shape (n_batch, n_nodes, 2*num_edge_types, transfer_size)
+        # We want to multiply  through by edge strengths, which are of shape
+        # (n_batch, n_nodes, n_nodes, num_edge_types), both fwd and backward
+        edge_strength_scale = T.concatenate([gstate.edge_strengths, gstate.edge_strengths.swapaxes(1,2)], 3)
+        # edge_strength_scale is of (n_batch, n_nodes, n_nodes, 2*num_edge_types)
+        intermed = T.shape_padaxis(scaled_transformed, 2) * T.shape_padright(edge_strength_scale)
+        # intermed is of shape (n_batch, n_nodes "source", n_nodes "dest", 2*num_edge_types, transfer_size)
+        # now reduce along the "source" and "edge_types" dimensions to get dest activations
+        # of shape (n_batch, n_nodes, transfer_size)
+        reduced_result = T.sum(T.sum(intermed, 3), 1)
 
-        source_state_part = T.shape_padaxis(gstate.node_states, 2)
-        fwd_result = helper_transform(source_state_part, self._transfer_fwd_W, self._transfer_fwd_b)
-
-        dest_state_part = T.shape_padaxis(gstate.node_states, 1)
-        bwd_result = helper_transform(dest_state_part, self._transfer_bwd_W, self._transfer_bwd_b).dimshuffle([0,2,1,3])
-
-        combined_result = fwd_result + bwd_result
-        # combined_result is of shape (n_batch, n_nodes, n_nodes, _transfer_size), where
-        # index 1 is the "from" node (where the info came from), index 2 is the "to" node
-        # now we scale the result by the strength the "from" nodes, and reduce across
-        # "from" nodes to produce the update input for each "to" node
-        node_strength_scale = T.shape_padright(T.shape_padright(gstate.node_strengths))
-        reduced_result = T.sum(node_strength_scale * combined_result, 1)
+        # now add information fom current node id
+        full_input = T.concatenate([gstate.node_ids, reduced_result], 2)
 
         # we flatten to apply GRU
-        flat_input = reduced_result.reshape([-1, self._transfer_size])
+        flat_input = full_input.reshape([-1, self._graph_spec.num_node_ids + self._transfer_size])
         flat_state = gstate.node_states.reshape([-1, self._graph_spec.node_state_size])
         new_flat_state = self._propagation_gru.step(flat_input, flat_state, dropout_masks)
 
@@ -97,12 +88,12 @@ class PropagationTransformation( object ):
             iterations: An integer. How many steps to propagate
         """
 
-        def _scan_step(cur_node_states, node_strengths, edge_strengths, edge_states, *dmasks):
-            curstate = GraphState(node_strengths, cur_node_states, edge_strengths, edge_states)
+        def _scan_step(cur_node_states, node_strengths, node_ids, edge_strengths, *dmasks):
+            curstate = GraphState(node_strengths, node_ids, cur_node_states, edge_strengths)
             return self.process(curstate, dmasks if dropout_masks is not None else None).node_states
 
         outputs_info = [gstate.node_states]
-        all_node_states, _ = theano.scan(_scan_step, n_steps=iterations, non_sequences=[gstate.node_strengths, gstate.edge_strengths, gstate.edge_states] + (dropout_masks if dropout_masks is not None else []), outputs_info=outputs_info)
+        all_node_states, _ = theano.scan(_scan_step, n_steps=iterations, non_sequences=[gstate.node_strengths, gstate.node_ids, gstate.edge_strengths] + (dropout_masks if dropout_masks is not None else []), outputs_info=outputs_info)
 
         final_gstate = gstate.with_updates(node_states=all_node_states[-1,:,:,:])
         return final_gstate

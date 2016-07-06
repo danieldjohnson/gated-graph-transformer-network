@@ -1,13 +1,14 @@
 import os
 import pickle
 import argparse
+import shutil
 
 import model
 import babi_train
 import babi_parse
 from util import *
 
-def main(task_fn, output_format_str, mutable_nodes, propagate_intermediate, outputdir, num_updates, batch_size, resume, resume_auto, visualize, validation):
+def main(task_fn, output_format_str, num_ids, num_edge_types, state_width, dynamic_nodes, mutable_nodes, propagate_intermediate, outputdir, num_updates, batch_size, dropout_keep, resume, resume_auto, visualize, validation):
     output_format = model.ModelOutputFormat[output_format_str]
 
     prepped_stories = babi_parse.prepare_stories(babi_parse.get_stories(task_fn))
@@ -21,17 +22,20 @@ def main(task_fn, output_format_str, mutable_nodes, propagate_intermediate, outp
 
     m = model.Model(num_input_words=len(wordlist),
                     num_output_words=len(eff_anslist),
-                    node_state_size=50,
-                    edge_state_size=50,
+                    num_node_ids=num_ids,
+                    node_state_size=state_width,
+                    num_edge_types=num_edge_types,
                     input_repr_size=100,
                     output_repr_size=100,
+                    propose_repr_size=50,
                     propagate_repr_size=50,
                     new_nodes_per_iter=3,
                     output_format=output_format,
                     final_propagate=5,
+                    dynamic_nodes=dynamic_nodes,
                     nodes_mutable=mutable_nodes,
                     intermediate_propagate=(5 if propagate_intermediate else 0),
-                    dropout_keep=0.5,
+                    dropout_keep=dropout_keep,
                     setup=True)
 
     if resume_auto:
@@ -66,7 +70,12 @@ def main(task_fn, output_format_str, mutable_nodes, propagate_intermediate, outp
 parser = argparse.ArgumentParser(description='Train a graph memory network model.', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('task_fn', help="Filename of the task to load")
 parser.add_argument('output_format_str', choices=[x.name for x in model.ModelOutputFormat], help="Output format for the task")
+parser.add_argument('num_ids', type=int, help="Number of valid node ids")
+parser.add_argument('num_edge_types', type=int, help="Number of valid edge types")
+parser.add_argument('state_width', type=int, help="Width of node state")
+parser.add_argument('--dropout_keep', type=float, default=1, help="Percent chance to keep a node in dropout")
 parser.add_argument('--mutable_nodes', action="store_true", help="Make nodes mutable")
+parser.add_argument('--dynamic_nodes', action="store_true", help="Create nodes after each sentence. (Otherwise, create unique nodes at the beginning)")
 parser.add_argument('--propagate_intermediate', action="store_true", help="Run a propagation step after each sentence")
 parser.add_argument('--outputdir', default="output", help="Directory to save output in")
 parser.add_argument('--num_updates', default="10000", type=int, help="How many iterations to train")
@@ -78,6 +87,6 @@ resume_group.add_argument('--resume', nargs=2, metavar=('TIMESTEP', 'PARAMFILE')
 resume_group.add_argument('--resume_auto', action='store_true', help='Automatically restore from a previous run using output directory')
 
 if __name__ == '__main__':
-    np.set_printoptions(linewidth=200)
+    np.set_printoptions(linewidth=shutil.get_terminal_size((80, 20)).columns)
     args = vars(parser.parse_args())
     main(**args)

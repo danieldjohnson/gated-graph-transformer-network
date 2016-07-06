@@ -18,20 +18,21 @@ class EdgeStateUpdateTransformation( object ):
         """
         self._input_width = input_width
         self._graph_spec = graph_spec
-        self._process_input_size = input_width + 2*graph_spec.node_state_size
+        self._process_input_size = input_width + 2*(graph_spec.num_node_ids + graph_spec.node_state_size)
 
-        self._update_gru = StrengthWeightedGRULayer(self._process_input_size, graph_spec.edge_state_size, name="edgestateupdate")
+        self._update_W = theano.shared(init_params([self._process_input_size, 2*graph_spec.num_edge_types]), "edge_update_W")
+        self._update_b = theano.shared(init_params([2*graph_spec.num_edge_types], shift=-3.0), "edge_update_b")
 
     @property
     def params(self):
-        return self._update_gru.params
+        return [self._update_W, self._update_b]
 
     @property
     def num_dropout_masks(self):
-        return self._update_gru.num_dropout_masks
+        return 0
 
     def get_dropout_masks(self, srng, keep_frac):
-        return self._update_gru.get_dropout_masks(srng, keep_frac)
+        return []
 
     def process(self, gstate, input_vector, dropout_masks=None):
         """
@@ -43,22 +44,22 @@ class EdgeStateUpdateTransformation( object ):
             input_vector: A tensor of the form (n_batch, input_width)
         """
 
-        # gstate.edge_states is of shape (n_batch, n_nodes, n_nodes, node_state_width)
+        # gstate.edge_states is of shape (n_batch, n_nodes, n_nodes, id+state)
         # combined input should be broadcasted to (n_batch, n_nodes, n_nodes, X)
         input_vector_part = T.shape_padaxis(T.shape_padaxis(input_vector, 1), 2)
-        source_state_part = T.shape_padaxis(gstate.node_states, 2)
-        dest_state_part = T.shape_padaxis(gstate.node_states, 1)
+        source_state_part = T.shape_padaxis(T.concatenate([gstate.node_ids, gstate.node_states], 2), 2)
+        dest_state_part = T.shape_padaxis(T.concatenate([gstate.node_ids, gstate.node_states], 2), 1)
         full_input = broadcast_concat([input_vector_part, source_state_part, dest_state_part], 3)
 
-        # we flatten to apply GRU
+        # we flatten to process updates
         flat_input = full_input.reshape([-1, self._process_input_size])
-        flat_state = gstate.edge_states.reshape([-1, self._graph_spec.edge_state_size])
-        flat_strength = gstate.edge_strengths.flatten()
-        new_flat_state, new_flat_strength = self._update_gru.step(flat_input, flat_state, flat_strength, dropout_masks)
+        flat_result = do_layer(T.nnet.sigmoid, flat_input, self._update_W, self._update_b)
+        result = flat_result.reshape([gstate.n_batch, gstate.n_nodes, gstate.n_nodes, self._graph_spec.num_edge_types, 2])
+        should_set = result[:,:,:,:,0]
+        should_clear = result[:,:,:,:,1]
 
-        new_edge_states = new_flat_state.reshape(gstate.edge_states.shape)
-        new_edge_strengths = new_flat_strength.reshape(gstate.edge_strengths.shape)
+        new_strengths = gstate.edge_strengths*(1-should_clear) + (1-gstate.edge_strengths)*should_set
 
-        new_gstate = gstate.with_updates(edge_strengths=new_edge_strengths, edge_states=new_edge_states)
+        new_gstate = gstate.with_updates(edge_strengths=new_strengths)
         return new_gstate
 

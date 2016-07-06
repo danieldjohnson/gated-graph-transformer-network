@@ -1,5 +1,6 @@
 import theano
 import theano.tensor as T
+import theano.sandbox.rng_mrg
 import numpy as np
 
 from enum import Enum
@@ -18,20 +19,24 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, node_state_size, edge_state_size, input_repr_size, output_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, nodes_mutable=True, intermediate_propagate=0, unroll_loop=0, dropout_keep=1, setup=True):
+    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, dynamic_nodes=True, nodes_mutable=True, intermediate_propagate=0, unroll_loop=0, dropout_keep=1, setup=True):
         """
         Parameters:
             num_input_words: How many possible words in the input
             num_output_words: How many possible words in the output
+            num_node_ids: Id size (number of unique ids) for nodes
             node_state_size: State size for nodes
-            edge_state_size: State size for edges
+            num_edge_types: Number of unique edge types
             input_repr_size: Width of the intermediate input representation given to the network
             output_repr_size: Width of the intermediate output representation produced by the network
+            propose_repr_size: Width of the indermediate new-node proposal representation
             propagate_repr_size: Width of the intermediate propagation representation
             new_nodes_per_iter: How many nodes to add at each sentence iteration
             output_format: Member of ModelOutputFormat, giving the format of the output
             final_propagate: How many steps to propagate info for each input sentence
             intermediate_propagate: How many steps to propagate info for each input sentence
+            dynamic_nodes: Whether to dynamically create nodes as sentences are read. If false,
+                a node with each id will be created at task start
             nodes_mutable: Whether nodes should update their state based on input
             unroll_loop: How many timesteps to unroll the main loop, or 0 to use scan
             dropout_keep: Probability to keep a node in dropout
@@ -39,20 +44,23 @@ class Model( object ):
         """
         self.num_input_words = num_input_words
         self.num_output_words = num_output_words
+        self.num_node_ids = num_node_ids
         self.node_state_size = node_state_size
-        self.edge_state_size = edge_state_size
+        self.num_edge_types = num_edge_types
         self.input_repr_size = input_repr_size
         self.output_repr_size = output_repr_size
+        self.propose_repr_size = propose_repr_size
         self.propagate_repr_size = propagate_repr_size
         self.new_nodes_per_iter = new_nodes_per_iter
         self.output_format = output_format
         self.final_propagate = final_propagate
         self.intermediate_propagate = intermediate_propagate
+        self.dynamic_nodes = dynamic_nodes
         self.nodes_mutable = nodes_mutable
         self.unroll_loop = unroll_loop
         self.dropout_keep = np.float32(dropout_keep)
 
-        graphspec = GraphStateSpec(self.node_state_size, self.edge_state_size)
+        graphspec = GraphStateSpec(num_node_ids, node_state_size, num_edge_types)
 
         self.parameterized = []
 
@@ -60,15 +68,16 @@ class Model( object ):
         self.parameterized.append(self.input_transformer)
 
         if nodes_mutable:
-            self.node_state_updater = tfms.NodeStateUpdateTransformation(input_repr_size, graphspec)
+            self.node_state_updater = tfms.NodeStateUpdateTransformation(input_repr_size, propose_repr_size, graphspec)
             self.parameterized.append(self.node_state_updater)
 
         if intermediate_propagate != 0:
             self.intermediate_propagator = tfms.PropagationTransformation(propagate_repr_size, graphspec, T.tanh)
             self.parameterized.append(self.intermediate_propagator)
 
-        self.new_node_adder = tfms.NewNodesTransformation(input_repr_size, graphspec)
-        self.parameterized.append(self.new_node_adder)
+        if self.dynamic_nodes:
+            self.new_node_adder = tfms.NewNodesTransformation(input_repr_size, graphspec)
+            self.parameterized.append(self.new_node_adder)
 
         self.edge_state_updater = tfms.EdgeStateUpdateTransformation(input_repr_size, graphspec)
         self.parameterized.append(self.edge_state_updater)
@@ -118,7 +127,8 @@ class Model( object ):
             node_state_updater_dropout = self.node_state_updater.get_dropout_masks(self.srng, self.dropout_keep)
         if self.intermediate_propagate != 0:
             intermediate_propagator_dropout = self.intermediate_propagator.get_dropout_masks(self.srng, self.dropout_keep)
-        new_node_adder_dropout = self.new_node_adder.get_dropout_masks(self.srng, self.dropout_keep)
+        if self.dynamic_nodes:
+            new_node_adder_dropout = self.new_node_adder.get_dropout_masks(self.srng, self.dropout_keep)
         edge_state_updater_dropout = self.edge_state_updater.get_dropout_masks(self.srng, self.dropout_keep)
         query_node_state_updater_dropout = self.query_node_state_updater.get_dropout_masks(self.srng, self.dropout_keep)
         final_propagator_dropout = self.final_propagator.get_dropout_masks(self.srng, self.dropout_keep)
@@ -155,13 +165,14 @@ class Model( object ):
                     gstate = self.intermediate_propagator.process_multiple(gstate, self.intermediate_propagate, cur_dropout)
 
                 # Propose and vote on new nodes
-                num_dropout = self.new_node_adder.num_dropout_masks
-                if with_dropout:
-                    cur_dropout = all_dropouts[:num_dropout]
-                    all_dropouts = all_dropouts[num_dropout:]
-                else:
-                    cur_dropout = None
-                gstate = self.new_node_adder.process(gstate, input_repr, self.new_nodes_per_iter, cur_dropout)
+                if self.dynamic_nodes:
+                    num_dropout = self.new_node_adder.num_dropout_masks
+                    if with_dropout:
+                        cur_dropout = all_dropouts[:num_dropout]
+                        all_dropouts = all_dropouts[num_dropout:]
+                    else:
+                        cur_dropout = None
+                    gstate = self.new_node_adder.process(gstate, input_repr, self.new_nodes_per_iter, cur_dropout)
 
                 # Update edge state
                 num_dropout = self.edge_state_updater.num_dropout_masks
@@ -187,12 +198,15 @@ class Model( object ):
 
             all_dropouts = (node_state_updater_dropout if self.nodes_mutable else []) \
                          + (intermediate_propagator_dropout if self.intermediate_propagate != 0 else []) \
-                         + new_node_adder_dropout \
+                         + (new_node_adder_dropout if self.dynamic_nodes else []) \
                          + edge_state_updater_dropout
+            if self.dynamic_nodes:
+                initial_gstate = GraphState.create_empty(n_batch, self.num_node_ids, self.node_state_size, self.num_edge_types)
+            else:
+                initial_gstate = GraphState.create_full_unique(n_batch, self.num_node_ids, self.node_state_size, self.num_edge_types)
             if self.unroll_loop > 0:
                 all_gstates = []
-                n_batch_with_assert = T.opt.Assert("Maximum story length is {}".format(self.unroll_loop))(n_batch, T.le(n_sentences,self.unroll_loop))
-                cur_gstate = GraphState.create_empty(n_batch_with_assert, self.node_state_size, self.edge_state_size)
+                cur_gstate = initial_gstate.with_updates(node_ids=T.opt.Assert("Maximum story length is {}".format(self.unroll_loop))(initial_gstate.node_ids, T.le(n_sentences,self.unroll_loop)))
                 for i in range(self.unroll_loop):
                     condition = T.lt(i,n_sentences)
                     input_repr = input_reprs[:,i,:]
@@ -206,8 +220,11 @@ class Model( object ):
                 final_gstate = cur_gstate
             else:
                 # Account for all nodes, plus the extra padding node to prevent GPU unpleasantness
-                pad_graph_size = n_sentences * self.new_nodes_per_iter + 1
-                outputs_info = GraphState.create_empty(n_batch, self.node_state_size, self.edge_state_size).flatten_to_const_size(pad_graph_size)
+                if self.dynamic_nodes:
+                    pad_graph_size = n_sentences * self.new_nodes_per_iter + 1
+                else:
+                    pad_graph_size = self.num_node_ids
+                outputs_info = initial_gstate.flatten_to_const_size(pad_graph_size)
                 prepped_input = input_reprs.dimshuffle([1,0,2])
                 all_flat_gstates, _ = theano.scan(_scan_fn, sequences=[prepped_input], outputs_info=outputs_info, non_sequences=[pad_graph_size]+all_dropouts)
                 final_flat_gstate = [x[-1] for x in all_flat_gstates]
@@ -240,7 +257,7 @@ class Model( object ):
                                                      propagated_gstate.flatten())]
             return loss, final_output, full_flat_gstates, max_seq_len
 
-        train_loss, _, _, _ = _build(True)
+        train_loss, _, _, _ = _build(self.dropout_keep != 1)
         adam_updates = Adam(train_loss, self.params)
 
         mode = theano.Mode().excluding("scanOp_pushout_output")
