@@ -11,6 +11,8 @@ import transformation_modules as tfms
 from graph_state import GraphStateSpec, GraphState 
 from adam import Adam
 
+from theano.compile.nanguardmode import NanGuardMode
+
 class ModelOutputFormat( Enum ):
     category = 1
     subset = 2
@@ -21,7 +23,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, dynamic_nodes=True, nodes_mutable=True, intermediate_propagate=0, setup=True):
+    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, dynamic_nodes=True, nodes_mutable=True, intermediate_propagate=0, setup=True, check_nan=False):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -41,6 +43,7 @@ class Model( object ):
                 a node with each id will be created at task start
             nodes_mutable: Whether nodes should update their state based on input
             setup: Whether or not to automatically set up the model
+            check_nan: Whether to check for NaN
         """
         self.num_input_words = num_input_words
         self.num_output_words = num_output_words
@@ -57,6 +60,7 @@ class Model( object ):
         self.intermediate_propagate = intermediate_propagate
         self.dynamic_nodes = dynamic_nodes
         self.nodes_mutable = nodes_mutable
+        self.check_nan = check_nan
 
         graphspec = GraphStateSpec(num_node_ids, node_state_size, num_edge_types)
 
@@ -272,7 +276,11 @@ class Model( object ):
         train_loss, _, full_flat_gstates, _ = _build(True)
         adam_updates = Adam(train_loss, self.params)
 
-        mode = theano.Mode().excluding("scanOp_pushout_output")
+        if self.check_nan:
+            mode = NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=True)
+        else:
+            mode = theano.Mode()
+        mode = mode.excluding("scanOp_pushout_output")
         self.train_fn = theano.function([input_words, query_words, correct_output, graph_num_new_nodes, graph_new_node_strengths, graph_new_node_ids, graph_new_edges],
                                         train_loss,
                                         updates=adam_updates,
