@@ -31,7 +31,7 @@ class OutputSequenceTransformation( object ):
     def get_dropout_masks(self, srng, keep_frac):
         return self._seq_gru.get_dropout_masks(srng, keep_frac)
 
-    def process(self, input_vector, seq_len, dropout_masks):
+    def process(self, input_vector, seq_len, dropout_masks=None):
         """
         Convert an input vector into a sequence of categorical distributions
 
