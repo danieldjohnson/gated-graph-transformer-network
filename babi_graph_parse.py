@@ -91,10 +91,10 @@ def get_buckets(stories, max_ignore_unbatched=100, max_pad_amount=25):
 PAD_WORD = "<PAD>"
 
 def get_wordlist(stories):
-    words = [PAD_WORD] + list(set((word
+    words = [PAD_WORD] + sorted(list(set((word
         for (sents_graphs, query, answer) in stories
         for wordbag in itertools.chain((s for s,g in sents_graphs), [query])
-        for word in wordbag )))
+        for word in wordbag ))))
     wordmap = {word:i for i,word in enumerate(words)}
     return words, wordmap
 
@@ -118,15 +118,15 @@ def get_unqualified_id(s):
     return s.split("#")[0]
 
 def get_graph_lists(stories):
-    node_words = list(set(get_unqualified_id(node)
+    node_words = sorted(list(set(get_unqualified_id(node)
         for (sents_graphs, query, answer) in stories
         for sent,graph in sents_graphs
-        for node in graph["nodes"]))
+        for node in graph["nodes"])))
     nodemap = {word:i for i,word in enumerate(node_words)}
-    edge_words = list(set(get_unqualified_id(edge["type"])
+    edge_words = sorted(list(set(get_unqualified_id(edge["type"])
         for (sents_graphs, query, answer) in stories
         for sent,graph in sents_graphs
-        for edge in graph["edges"]))
+        for edge in graph["edges"])))
     edgemap = {word:i for i,word in enumerate(edge_words)}
     return node_words, nodemap, edge_words, edgemap
 
