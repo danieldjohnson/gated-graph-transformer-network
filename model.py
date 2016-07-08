@@ -269,7 +269,7 @@ class Model( object ):
                                                      propagated_gstate.flatten())]
             return loss, final_output, full_flat_gstates, max_seq_len
 
-        train_loss, _, _, _ = _build(True)
+        train_loss, _, full_flat_gstates, _ = _build(True)
         adam_updates = Adam(train_loss, self.params)
 
         mode = theano.Mode().excluding("scanOp_pushout_output")
@@ -282,6 +282,12 @@ class Model( object ):
         self.eval_fn = theano.function( [input_words, query_words, correct_output, graph_num_new_nodes, graph_new_node_strengths, graph_new_node_ids, graph_new_edges],
                                         train_loss,
                                         allow_input_downcast=True,
+                                        mode=mode)
+
+        self.debug_test_fn = theano.function( [input_words, query_words, correct_output, graph_num_new_nodes, graph_new_node_strengths, graph_new_node_ids, graph_new_edges],
+                                        full_flat_gstates,
+                                        allow_input_downcast=True,
+                                        on_unused_input='ignore',
                                         mode=mode)
 
         test_loss, final_output, full_flat_gstates, max_seq_len = _build(False)

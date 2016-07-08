@@ -56,15 +56,22 @@ def assemble_batch(stories, num_answer_words, format_spec):
     next_edges = np.stack(next_edges)
     return cvtd_sents, cvtd_queries, cvtd_answers, num_new_nodes, new_node_strengths, new_node_ids, next_edges
 
-def visualize(m, story_buckets, wordlist, answerlist, output_format, outputdir, batch_size=1, seq_len=5):
+def visualize(m, story_buckets, wordlist, answerlist, output_format, outputdir, batch_size=1, seq_len=5, debugmode=False):
     cur_bucket = random.choice(story_buckets)
     sampled_batch = sample_batch(cur_bucket, batch_size, len(answerlist), output_format)
+    part_sampled_batch = sampled_batch[:3]
     with open(os.path.join(outputdir,'stories.txt'),'w') as f:
-        babi_parse.print_batch(sampled_batch, wordlist, answerlist, file=f)
+        babi_graph_parse.print_batch(part_sampled_batch, wordlist, answerlist, file=f)
     with open(os.path.join(outputdir,'answer_list.txt'),'w') as f:
         f.write('\n'.join(answerlist) + '\n')
-    args = sampled_batch[:2] + ((seq_len,) if output_format == model.ModelOutputFormat.sequence else ())
-    results = m.test_fn(*args)
+    if debugmode:
+        args = sampled_batch
+        fn = m.debug_test_fn
+        print("FALKHVKADHL")
+    else:
+        args = part_sampled_batch[:2] + ((seq_len,) if output_format == model.ModelOutputFormat.sequence else ())
+        fn = m.test_fn
+    results = fn(*args)
     for i,result in enumerate(results):
         np.save(os.path.join(outputdir,'result_{}.npy'.format(i)), result)
 

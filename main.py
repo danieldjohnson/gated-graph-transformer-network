@@ -8,7 +8,7 @@ import babi_train
 import babi_graph_parse
 from util import *
 
-def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, propagate_intermediate, outputdir, num_updates, batch_size, resume, resume_auto, visualize, validation):
+def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, propagate_intermediate, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation):
     output_format = model.ModelOutputFormat[output_format_str]
 
     prepped_stories = babi_graph_parse.prepare_stories(babi_graph_parse.get_stories(task_fn), dynamic_nodes)
@@ -61,6 +61,10 @@ def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, 
         print("Starting to visualize...")
         babi_train.visualize(m, bucketed, wordlist, eff_anslist, output_format, outputdir)
         print("Wrote visualization files to {}.".format(outputdir))
+    elif debugtest:
+        print("Starting debug test...")
+        babi_train.visualize(m, bucketed, wordlist, eff_anslist, output_format, outputdir, debugmode=True)
+        print("Wrote visualization files to {}.".format(outputdir))
     else:
         print("Starting to train...")
         babi_train.train(m, bucketed, len(eff_anslist), output_format, num_updates, outputdir, start_idx, batch_size, validation_buckets)
@@ -78,6 +82,7 @@ parser.add_argument('--num-updates', default="10000", type=int, help="How many i
 parser.add_argument('--batch-size', default="10", type=int, help="Batch size to use")
 parser.add_argument('--validation', metavar="VALIDATION_FILE", default=None, help="Filename of validation tasks")
 parser.add_argument('--visualize', action="store_true", help="Visualise current state instead of training")
+parser.add_argument('--debugtest', action="store_true", help="Debug the training state")
 resume_group = parser.add_mutually_exclusive_group()
 resume_group.add_argument('--resume', nargs=2, metavar=('TIMESTEP', 'PARAMFILE'), default=None, help='Where to restore from: timestep, and file to load')
 resume_group.add_argument('--resume-auto', action='store_true', help='Automatically restore from a previous run using output directory')
