@@ -102,11 +102,11 @@ class GraphState( object ):
         return self.node_states.shape[1]
 
     @property
-    def node_id_width(self):
+    def num_node_ids(self):
         return self.node_ids.shape[2]
 
     @property
-    def node_state_width(self):
+    def node_state_size(self):
         return self.node_states.shape[2]
 
     @property
@@ -126,8 +126,8 @@ class GraphState( object ):
 
     def flatten_to_const_size(self, const_n_nodes):
         exp_node_strengths = pad_to(self.node_strengths, [self.n_batch, const_n_nodes])
-        exp_node_ids = pad_to(self.node_ids, [self.n_batch, const_n_nodes, self.node_id_width])
-        exp_node_states = pad_to(self.node_states, [self.n_batch, const_n_nodes, self.node_state_width])
+        exp_node_ids = pad_to(self.node_ids, [self.n_batch, const_n_nodes, self.num_node_ids])
+        exp_node_states = pad_to(self.node_states, [self.n_batch, const_n_nodes, self.node_state_size])
         exp_edge_strengths = pad_to(self.edge_strengths, [self.n_batch, const_n_nodes, const_n_nodes, self.num_edge_types])
         return [exp_node_strengths, exp_node_ids, exp_node_states, exp_edge_strengths, self.n_nodes]
     
@@ -169,7 +169,7 @@ class GraphState( object ):
             new_node_states = T.zeros([self.n_batch, new_node_strengths.shape[1], self.node_state_size])
 
         next_node_strengths = T.concatenate([self.node_strengths, new_node_strengths], 1)
-        next_node_ids = T.concatenate([self.node_ids, new_node_states], 1)
+        next_node_ids = T.concatenate([self.node_ids, new_node_ids], 1)
         next_node_states = T.concatenate([self.node_states, new_node_states], 1)
         next_n_nodes = next_node_strengths.shape[1]
 

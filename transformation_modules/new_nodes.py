@@ -24,10 +24,10 @@ class NewNodesTransformation( object ):
         self._proposer_gru = BaseGRULayer(input_width, proposal_width, name="newnodes_proposer")
         self._propose_W = theano.shared(init_params([proposal_width, 1+graph_spec.num_node_ids]), "newnodes_propose_W")
         # Bias toward making nodes. Note that we can shift everything, since softmax doesn't care about constants
-        self._propose_b = theano.shared(init_params([1+graph_spec.num_node_ids], shift=1.0), "newnodes_propose_b")
+        self._propose_b = theano.shared(init_params([1+graph_spec.num_node_ids], shift=3.0), "newnodes_propose_b")
 
-        self._vote_W = theano.shared(init_params([2*graph_spec.node_id_size + graph_spec.node_state_size, 1]), "newnodes_vote_W")
-        self._vote_b = theano.shared(init_params([1], shift=-1.0), "newnodes_vote_b")
+        self._vote_W = theano.shared(init_params([2*graph_spec.num_node_ids + graph_spec.node_state_size, 1]), "newnodes_vote_W")
+        self._vote_b = theano.shared(init_params([1], shift=-3.0), "newnodes_vote_b")
 
     @property
     def params(self):
