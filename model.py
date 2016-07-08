@@ -3,6 +3,8 @@ import theano.tensor as T
 import theano.sandbox.rng_mrg
 import numpy as np
 
+import util
+
 from enum import Enum
 import itertools
 import transformation_modules as tfms
@@ -19,7 +21,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, dynamic_nodes=True, nodes_mutable=True, intermediate_propagate=0, unroll_loop=0, dropout_keep=1, setup=True):
+    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, dynamic_nodes=True, nodes_mutable=True, intermediate_propagate=0, setup=True):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -38,8 +40,6 @@ class Model( object ):
             dynamic_nodes: Whether to dynamically create nodes as sentences are read. If false,
                 a node with each id will be created at task start
             nodes_mutable: Whether nodes should update their state based on input
-            unroll_loop: How many timesteps to unroll the main loop, or 0 to use scan
-            dropout_keep: Probability to keep a node in dropout
             setup: Whether or not to automatically set up the model
         """
         self.num_input_words = num_input_words
@@ -57,8 +57,6 @@ class Model( object ):
         self.intermediate_propagate = intermediate_propagate
         self.dynamic_nodes = dynamic_nodes
         self.nodes_mutable = nodes_mutable
-        self.unroll_loop = unroll_loop
-        self.dropout_keep = np.float32(dropout_keep)
 
         graphspec = GraphStateSpec(num_node_ids, node_state_size, num_edge_types)
 
@@ -122,20 +120,16 @@ class Model( object ):
         # correct_output: shape (n_batch, ?, num_output_words)
         correct_output = T.ftensor3()
 
-        # Get all dropout masks
-        if self.nodes_mutable:
-            node_state_updater_dropout = self.node_state_updater.get_dropout_masks(self.srng, self.dropout_keep)
-        if self.intermediate_propagate != 0:
-            intermediate_propagator_dropout = self.intermediate_propagator.get_dropout_masks(self.srng, self.dropout_keep)
-        if self.dynamic_nodes:
-            new_node_adder_dropout = self.new_node_adder.get_dropout_masks(self.srng, self.dropout_keep)
-        edge_state_updater_dropout = self.edge_state_updater.get_dropout_masks(self.srng, self.dropout_keep)
-        query_node_state_updater_dropout = self.query_node_state_updater.get_dropout_masks(self.srng, self.dropout_keep)
-        final_propagator_dropout = self.final_propagator.get_dropout_masks(self.srng, self.dropout_keep)
-        if self.output_format == ModelOutputFormat.sequence:
-            output_processor_dropout = self.output_processor.get_dropout_masks(self.srng, self.dropout_keep)
+        # graph_num_new_nodes: shape(n_batch, n_sentence)
+        graph_num_new_nodes = T.imatrix()
+        # graph_new_node_strengths: shape(n_batch, n_sentence, new_nodes_per_iter)
+        graph_new_node_strengths =  T.ftensor3()
+        # graph_new_node_ids: shape(n_batch, n_sentence, new_nodes_per_iter, num_node_ids)
+        graph_new_node_ids = T.ftensor4()
+        # graph_new_edges: shape(n_batch, n_sentence, pad_graph_size, pad_graph_size, num_edge_types)
+        graph_new_edges = T.TensorType('floatX', (False,)*5)()
 
-        def _build(with_dropout):
+        def _build(with_correct_graph):
             # Process each sentence, flattened to (?, sentence_len)
             flat_input_words = input_words.reshape([-1, sentence_len])
             flat_input_reprs = self.input_transformer.process(flat_input_words) # shape (?, input_repr_size)
@@ -143,95 +137,110 @@ class Model( object ):
 
             query_repr = self.input_transformer.process(query_words)
 
-            def _iter_fn(input_repr, gstate, all_dropouts):
+            def _iter_fn(input_repr, gstate, correct_num_new_nodes=None, correct_new_strengths=None, correct_new_node_ids=None, correct_edges=None):
+                graph_loss = None
                 # If necessary, update node state
                 if self.nodes_mutable:
-                    num_dropout = self.node_state_updater.num_dropout_masks
-                    if with_dropout:
-                        cur_dropout = all_dropouts[:num_dropout]
-                        all_dropouts = all_dropouts[num_dropout:]
-                    else:
-                        cur_dropout = None
-                    gstate = self.node_state_updater.process(gstate, input_repr, cur_dropout)
+                    gstate = self.node_state_updater.process(gstate, input_repr)
 
                 # If necessary, propagate node state
                 if self.intermediate_propagate != 0:
-                    num_dropout = self.intermediate_propagator.num_dropout_masks
-                    if with_dropout:
-                        cur_dropout = all_dropouts[:num_dropout]
-                        all_dropouts = all_dropouts[num_dropout:]
-                    else:
-                        cur_dropout = None
-                    gstate = self.intermediate_propagator.process_multiple(gstate, self.intermediate_propagate, cur_dropout)
+                    gstate = self.intermediate_propagator.process_multiple(gstate, self.intermediate_propagate)
 
                 # Propose and vote on new nodes
                 if self.dynamic_nodes:
-                    num_dropout = self.new_node_adder.num_dropout_masks
-                    if with_dropout:
-                        cur_dropout = all_dropouts[:num_dropout]
-                        all_dropouts = all_dropouts[num_dropout:]
+                    new_strengths, new_ids = self.new_node_adder.get_candidates(gstate, input_repr, self.new_nodes_per_iter)
+                    # new_strengths and correct_new_strengths are of shape (n_batch, new_nodes_per_iter)
+                    # new_ids and correct_new_node_ids are of shape (n_batch, new_nodes_per_iter, num_node_ids)
+                    if with_correct_graph:
+                        perm_idxs = np.array(list(itertools.permutations(range(self.new_nodes_per_iter))))
+                        permuted_correct_str = correct_new_strengths[:,perm_idxs]
+                        permuted_correct_ids = correct_new_node_ids[:,perm_idxs]
+                        # due to advanced indexing, we should have shape (n_batch, permutation, new_nodes_per_iter, num_node_ids)
+                        ext_new_str = T.shape_padaxis(new_strengths,1)
+                        ext_new_ids = T.shape_padaxis(new_ids,1)
+                        strength_ll = permuted_correct_str * T.log(ext_new_str + util.EPSILON) + (1-permuted_correct_str) * T.log(1-ext_new_str + util.EPSILON)
+                        ids_ll = permuted_correct_ids * T.log(ext_new_ids  + util.EPSILON)
+                        reduced_perm_lls = T.sum(strength_ll, axis=2) + T.sum(ids_ll, axis=[2,3])
+                        full_ll = util.reduce_log_sum(reduced_perm_lls, 1)
+                        # Note that some of these permutations are identical, since we likely did not add the maximum
+                        # amount of nodes. Thus we will have added repeated elements here.
+                        # We have log(x+x+...+x) = log(kx), where k is the repetition factor and x is the probability we want
+                        # log(kx) = log(k) + log(x)
+                        # Our repetition factor k is given by (new_nodes_per_iter - correct_num_new_nodes)!
+                        # Recall that n! = gamma(n+1)
+                        # so log(x) = log(kx) - log(gamma(k+1))
+                        log_rep_factor = T.gammaln(T.cast(self.new_nodes_per_iter - correct_num_new_nodes + 1, 'floatX'))
+                        scaled_ll = full_ll - log_rep_factor
+                        graph_loss = -scaled_ll
+                        # now substitute in the correct nodes
+                        gstate = gstate.with_additional_nodes(correct_new_strengths, correct_new_node_ids)
                     else:
-                        cur_dropout = None
-                    gstate = self.new_node_adder.process(gstate, input_repr, self.new_nodes_per_iter, cur_dropout)
+                        gstate = gstate.with_additional_nodes(new_strengths, new_ids)
 
                 # Update edge state
-                num_dropout = self.edge_state_updater.num_dropout_masks
-                if with_dropout:
-                    cur_dropout = all_dropouts[:num_dropout]
-                    all_dropouts = all_dropouts[num_dropout:]
+                gstate = self.edge_state_updater.process(gstate, input_repr)
+                if with_correct_graph:
+                    cropped_correct_edges = correct_edges[:,:gstate.n_nodes,:gstate.n_nodes,:]
+                    edge_lls = cropped_correct_edges * T.log(gstate.edge_strengths + util.EPSILON) + (1-cropped_correct_edges) * T.log(1-gstate.edge_strengths + util.EPSILON)
+                    edge_loss = -T.sum(edge_lls, axis=[1,2,3])
+                    graph_loss = edge_loss if graph_loss is None else graph_loss + edge_loss
+                    gstate = gstate.with_updates(edge_strengths=cropped_correct_edges)
+                    return gstate, graph_loss
                 else:
-                    cur_dropout = None
-                gstate = self.edge_state_updater.process(gstate, input_repr, cur_dropout)
-                return gstate
+                    return gstate
 
             # Scan over each sentence
-            def _scan_fn(input_repr, *stuff): # (input_repr, *flat_graph_state, pad_graph_size, *dropouts)
-                flat_graph_state = stuff[:GraphState.const_flattened_length()]
-                pad_graph_size = stuff[GraphState.const_flattened_length()]
-                dropouts = list(stuff[GraphState.const_flattened_length()+1:])
+            def _scan_fn(input_repr, *stuff): # (input_repr, [*correct_graph_stuff?], *flat_graph_state, pad_graph_size)
+                stuff = list(stuff)
+                if with_correct_graph:
+                    c_num_new_nodes, c_new_strengths, c_new_node_ids, c_edges = stuff[:4]
+                    stuff = stuff[4:]
+                flat_graph_state = stuff[:-1]
+                pad_graph_size = stuff[-1]
                 gstate = GraphState.unflatten_from_const_size(flat_graph_state)
 
-                gstate = _iter_fn(input_repr, gstate, dropouts)
+                if with_correct_graph:
+                    gstate, loss = _iter_fn(input_repr, gstate, c_num_new_nodes, c_new_strengths, c_new_node_ids, c_edges)
+                else:
+                    gstate = _iter_fn(input_repr, gstate)
 
-                flat_gstate = gstate.flatten_to_const_size(pad_graph_size)
-                return flat_gstate
+                retvals = gstate.flatten_to_const_size(pad_graph_size)
+                if with_correct_graph:
+                    retvals.append(loss)
+                return retvals
 
-            all_dropouts = (node_state_updater_dropout if self.nodes_mutable else []) \
-                         + (intermediate_propagator_dropout if self.intermediate_propagate != 0 else []) \
-                         + (new_node_adder_dropout if self.dynamic_nodes else []) \
-                         + edge_state_updater_dropout
             if self.dynamic_nodes:
                 initial_gstate = GraphState.create_empty(n_batch, self.num_node_ids, self.node_state_size, self.num_edge_types)
             else:
                 initial_gstate = GraphState.create_full_unique(n_batch, self.num_node_ids, self.node_state_size, self.num_edge_types)
-            if self.unroll_loop > 0:
-                all_gstates = []
-                cur_gstate = initial_gstate.with_updates(node_ids=T.opt.Assert("Maximum story length is {}".format(self.unroll_loop))(initial_gstate.node_ids, T.le(n_sentences,self.unroll_loop)))
-                for i in range(self.unroll_loop):
-                    condition = T.lt(i,n_sentences)
-                    input_repr = input_reprs[:,i,:]
-                    updated_gstate = _iter_fn(input_repr, cur_gstate, all_dropouts)
-                    flat_updated_gstate = updated_gstate.flatten()
-                    flat_cur_gstate = cur_gstate.flatten()
-                    flat_new_gstate = [theano.ifelse.ifelse(condition, upd, cur) for upd,cur in zip(flat_updated_gstate, flat_cur_gstate)]
-                    new_gstate = GraphState.unflatten(flat_new_gstate)
-                    all_gstates.append(new_gstate)
-                    cur_gstate = new_gstate
-                final_gstate = cur_gstate
-            else:
-                # Account for all nodes, plus the extra padding node to prevent GPU unpleasantness
-                if self.dynamic_nodes:
-                    pad_graph_size = n_sentences * self.new_nodes_per_iter + 1
-                else:
-                    pad_graph_size = self.num_node_ids
-                outputs_info = initial_gstate.flatten_to_const_size(pad_graph_size)
-                prepped_input = input_reprs.dimshuffle([1,0,2])
-                all_flat_gstates, _ = theano.scan(_scan_fn, sequences=[prepped_input], outputs_info=outputs_info, non_sequences=[pad_graph_size]+all_dropouts)
-                final_flat_gstate = [x[-1] for x in all_flat_gstates]
-                final_gstate = GraphState.unflatten_from_const_size(final_flat_gstate)
 
-            query_gstate = self.query_node_state_updater.process(final_gstate, query_repr, query_node_state_updater_dropout if with_dropout else None)
-            propagated_gstate = self.final_propagator.process_multiple(query_gstate, self.final_propagate, final_propagator_dropout if with_dropout else None)
+            # Account for all nodes, plus the extra padding node to prevent GPU unpleasantness
+            if self.dynamic_nodes:
+                pad_graph_size = n_sentences * self.new_nodes_per_iter + 1
+            else:
+                pad_graph_size = self.num_node_ids
+            outputs_info = initial_gstate.flatten_to_const_size(pad_graph_size)
+            prepped_input = input_reprs.dimshuffle([1,0,2])
+            sequences = [prepped_input]
+            if with_correct_graph:
+                sequences.append(graph_num_new_nodes.swapaxes(0,1))
+                sequences.append(graph_new_node_strengths.swapaxes(0,1))
+                sequences.append(graph_new_node_ids.swapaxes(0,1))
+                sequences.append(graph_new_edges.swapaxes(0,1))
+                outputs_info.append(None)
+            all_scan_out, _ = theano.scan(_scan_fn, sequences=sequences, outputs_info=outputs_info, non_sequences=[pad_graph_size])
+            if with_correct_graph:
+                all_flat_gstates = all_scan_out[:-1]
+                graph_losses = all_scan_out[-1]
+                graph_loss = T.sum(graph_losses)/T.cast(input_words.shape[1], 'floatX')
+            else:
+                all_flat_gstates = all_scan_out
+            final_flat_gstate = [x[-1] for x in all_flat_gstates]
+            final_gstate = GraphState.unflatten_from_const_size(final_flat_gstate)
+
+            query_gstate = self.query_node_state_updater.process(final_gstate, query_repr)
+            propagated_gstate = self.final_propagator.process_multiple(query_gstate, self.final_propagate)
             aggregated_repr = self.aggregator.process(propagated_gstate) # shape (n_batch, output_repr_size)
             
             max_seq_len = correct_output.shape[1]
@@ -249,7 +258,10 @@ class Model( object ):
                 timewise_loss = T.nnet.categorical_crossentropy(flat_final_output, flat_correct_output)
                 full_loss = T.sum(timewise_loss)
 
-            loss = full_loss/T.cast(n_batch, 'float32')
+            if with_correct_graph:
+                full_loss = full_loss + graph_loss
+
+            loss = full_loss/T.cast(n_batch, 'floatX')
 
             full_flat_gstates = [T.concatenate([a,T.shape_padleft(b),T.shape_padleft(c)],0).swapaxes(0,1)
                                     for a,b,c in zip(all_flat_gstates,
@@ -257,22 +269,22 @@ class Model( object ):
                                                      propagated_gstate.flatten())]
             return loss, final_output, full_flat_gstates, max_seq_len
 
-        train_loss, _, _, _ = _build(self.dropout_keep != 1)
+        train_loss, _, _, _ = _build(True)
         adam_updates = Adam(train_loss, self.params)
 
         mode = theano.Mode().excluding("scanOp_pushout_output")
-        self.train_fn = theano.function([input_words, query_words, correct_output],
+        self.train_fn = theano.function([input_words, query_words, correct_output, graph_num_new_nodes, graph_new_node_strengths, graph_new_node_ids, graph_new_edges],
                                         train_loss,
                                         updates=adam_updates,
                                         allow_input_downcast=True,
                                         mode=mode)
 
-        eval_loss, final_output, full_flat_gstates, max_seq_len = _build(False)
-        self.eval_fn = theano.function( [input_words, query_words, correct_output],
-                                        eval_loss,
+        self.eval_fn = theano.function( [input_words, query_words, correct_output, graph_num_new_nodes, graph_new_node_strengths, graph_new_node_ids, graph_new_edges],
+                                        train_loss,
                                         allow_input_downcast=True,
                                         mode=mode)
 
+        test_loss, final_output, full_flat_gstates, max_seq_len = _build(False)
         self.test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
                                         [final_output] + full_flat_gstates,
                                         allow_input_downcast=True,

@@ -2,6 +2,10 @@ import theano
 import theano.tensor as T
 import numpy as np
 
+import itertools
+
+EPSILON = np.array(1e-8, np.float32)
+
 def init_params(shape, stddev=0.1, shift=0.0):
     """Get an initial value for a parameter"""
     return np.float32(np.random.normal(shift, stddev, shape))
@@ -59,3 +63,28 @@ def set_params(params, saved_params):
     """
     for param,saved in zip(params, saved_params):
         param.set_value(saved.get_value())
+
+def reduce_log_sum(tensor, axis=None, guaranteed_finite=True):
+    """
+    Sum probabilities in the log domain, i.e return
+        log(e^vec[0] + e^vec[1] + ...)
+        = log(e^x e^(vec[0]-x) + e^x e^(vec[1]-x) + ...)
+        = log(e^x [e^(vec[0]-x) + e^(vec[1]-x) + ...])
+        = log(e^x) + log(e^(vec[0]-x) + e^(vec[1]-x) + ...)
+        = x + log(e^(vec[0]-x) + e^(vec[1]-x) + ...)
+    For numerical stability, we choose x = max(vec)
+    Note that if x is -inf, that means all values are -inf,
+    so the answer should be -inf. In this case, choose x = 0
+    """
+    maxval = T.max(tensor, axis)
+    maxval_full = T.max(tensor, axis, keepdims=True)
+    if not guaranteed_finite:
+        maxval = T.switch(T.isfinite(maxval), maxval, T.zeros_like(maxval))
+        maxval_full = T.switch(T.isfinite(maxval_full), maxval_full, T.zeros_like(maxval_full))
+    reduced_sum = T.sum(T.exp(tensor - maxval_full), axis)
+    logsum = maxval + T.log(reduced_sum)
+    return logsum
+
+
+
+

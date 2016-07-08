@@ -40,21 +40,25 @@ class NewNodesTransformation( object ):
     def get_dropout_masks(self, srng, keep_frac):
         return self._proposer_gru.get_dropout_masks(srng, keep_frac)
 
-    def process(self, gstate, input_vector, max_candidates, dropout_masks=None):
+    def get_candidates(self, gstate, input_vector, max_candidates, dropout_masks=None):
         """
-        Process an input vector and update the state accordingly. This is accomplished as follows:
+        Get the current candidate new nodes. This is accomplished as follows:
           1. The proposer network, conditioned on the input vector, proposes multiple candidate nodes,
                 along with a confidence
           2. Every existing node, conditioned on its own state and the candidate, votes on whether or not
                 to accept this node
           3. A new node is created for each candidate node, with an existence strength given by
                 confidence * [product of all votes], and an initial state state as proposed
-          4. Edges to the new node are all nonexistent.
+        This method directly returns these new nodes for comparision
 
         Params:
             gstate: A GraphState giving the current state
             input_vector: A tensor of the form (n_batch, input_width)
             max_candidates: Integer, limit on the number of candidates to produce
+
+        Returns:
+            new_strengths: A tensor of the form (n_batch, new_node_idx)
+            new_ids: A tensor of the form (n_batch, new_node_idx, num_node_ids)
         """
         n_batch = gstate.n_batch
         n_nodes = gstate.n_nodes
@@ -86,8 +90,14 @@ class NewNodesTransformation( object ):
 
         new_strengths = chosen_strengths.dimshuffle([1,0])
         new_ids = candidate_ids.dimshuffle([1,0,2])
-        new_gstate = gstate.with_additional_nodes(new_strengths, new_ids)
+        return new_strengths, new_ids
 
+    def process(self, gstate, input_vector, max_candidates, dropout_masks=None):
+        """
+        Process an input vector and update the state accordingly.
+        """
+        new_strengths, new_ids = self.get_candidates(gstate, input_vector, max_candidates, dropout_masks)
+        new_gstate = gstate.with_additional_nodes(new_strengths, new_ids)
         return new_gstate
 
 

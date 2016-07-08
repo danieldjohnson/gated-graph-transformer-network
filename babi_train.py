@@ -3,7 +3,7 @@ import os
 import pickle
 import model
 import random
-import babi_parse
+import babi_graph_parse
 from graceful_interrupt import GracefulInterruptHandler
 
 BATCH_SIZE = 10
@@ -40,15 +40,21 @@ def get_effective_answer_words(answer_words, format_spec):
         return answer_words
 
 def sample_batch(matching_stories, batch_size, num_answer_words, format_spec):
-    sents, queries, answers = zip(*(random.choice(matching_stories) for _ in range(batch_size)))
-    return assemble_batch(sents, queries, answers, num_answer_words, format_spec)
+    chosen_stories = [random.choice(matching_stories) for _ in range(batch_size)]
+    return assemble_batch(chosen_stories, num_answer_words, format_spec)
 
-def assemble_batch(sents, queries, answers, num_answer_words, format_spec):
+def assemble_batch(stories, num_answer_words, format_spec):
+    sents, graphs, queries, answers = zip(*stories)
     cvtd_sents = np.array(sents, np.int32)
     cvtd_queries = np.array(queries, np.int32)
     max_ans_len = max(len(a) for a in answers)
     cvtd_answers = np.stack([convert_answer(answer, num_answer_words, format_spec, max_ans_len) for answer in answers])
-    return cvtd_sents, cvtd_queries, cvtd_answers
+    num_new_nodes, new_node_strengths, new_node_ids, next_edges = zip(*graphs)
+    num_new_nodes = np.stack(num_new_nodes)
+    new_node_strengths = np.stack(new_node_strengths)
+    new_node_ids = np.stack(new_node_ids)
+    next_edges = np.stack(next_edges)
+    return cvtd_sents, cvtd_queries, cvtd_answers, num_new_nodes, new_node_strengths, new_node_ids, next_edges
 
 def visualize(m, story_buckets, wordlist, answerlist, output_format, outputdir, batch_size=1, seq_len=5):
     cur_bucket = random.choice(story_buckets)
