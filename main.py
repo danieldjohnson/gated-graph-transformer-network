@@ -18,7 +18,7 @@ def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, 
     if validation is None:
         validation_buckets = None
     else:
-        validation_buckets = babi_parse.prepare_stories(babi_parse.get_stories(validation))[-1]
+        validation_buckets = babi_graph_parse.prepare_stories(babi_graph_parse.get_stories(validation))[-1]
 
     m = model.Model(num_input_words=len(wordlist),
                     num_output_words=len(eff_anslist),
