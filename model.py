@@ -23,7 +23,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, dynamic_nodes=True, nodes_mutable=True, best_node_match_only=True, intermediate_propagate=0, setup=True, check_nan=False):
+    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, dynamic_nodes=True, nodes_mutable=True, best_node_match_only=True, intermediate_propagate=0, train_with_graph=True, train_with_query=True, setup=True, check_nan=False):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -44,6 +44,8 @@ class Model( object ):
             dynamic_nodes: Whether to dynamically create nodes as sentences are read. If false,
                 a node with each id will be created at task start
             nodes_mutable: Whether nodes should update their state based on input
+            train_with_graph: If True, use the graph to train. Otherwise ignore the graph
+            train_with_query: If True, use the query to train. Otherwise ignore the query
             setup: Whether or not to automatically set up the model
             check_nan: Whether to check for NaN
         """
@@ -63,6 +65,8 @@ class Model( object ):
         self.intermediate_propagate = intermediate_propagate
         self.dynamic_nodes = dynamic_nodes
         self.nodes_mutable = nodes_mutable
+        self.train_with_graph = train_with_graph
+        self.train_with_query = train_with_query
         self.check_nan = check_nan
 
         graphspec = GraphStateSpec(num_node_ids, node_state_size, num_edge_types)
@@ -87,25 +91,26 @@ class Model( object ):
         self.edge_state_updater = tfms.EdgeStateUpdateTransformation(input_repr_size, graphspec)
         self.parameterized.append(self.edge_state_updater)
 
-        self.query_node_state_updater = tfms.NodeStateUpdateTransformation(input_repr_size, graphspec)
-        self.parameterized.append(self.query_node_state_updater)
+        if self.train_with_query:
+            self.query_node_state_updater = tfms.NodeStateUpdateTransformation(input_repr_size, graphspec)
+            self.parameterized.append(self.query_node_state_updater)
 
-        self.final_propagator = tfms.PropagationTransformation(propagate_repr_size, graphspec, T.tanh)
-        self.parameterized.append(self.final_propagator)
+            self.final_propagator = tfms.PropagationTransformation(propagate_repr_size, graphspec, T.tanh)
+            self.parameterized.append(self.final_propagator)
 
-        self.aggregator = tfms.AggregateRepresentationTransformation(output_repr_size, graphspec)
-        self.parameterized.append(self.aggregator)
+            self.aggregator = tfms.AggregateRepresentationTransformation(output_repr_size, graphspec)
+            self.parameterized.append(self.aggregator)
+
+            assert output_format in ModelOutputFormat, "Invalid output format {}".format(output_format)
+            if output_format == ModelOutputFormat.category:
+                self.output_processor = tfms.OutputCategoryTransformation(output_repr_size, num_output_words)
+            elif output_format == ModelOutputFormat.subset:
+                self.output_processor = tfms.OutputSetTransformation(output_repr_size, num_output_words)
+            elif output_format == ModelOutputFormat.sequence:
+                self.output_processor = tfms.OutputSequenceTransformation(output_repr_size, output_repr_size, num_output_words)
+            self.parameterized.append(self.output_processor)
 
         self.srng = theano.sandbox.rng_mrg.MRG_RandomStreams(np.random.randint(0, 1024))
-
-        assert output_format in ModelOutputFormat, "Invalid output format {}".format(output_format)
-        if output_format == ModelOutputFormat.category:
-            self.output_processor = tfms.OutputCategoryTransformation(output_repr_size, num_output_words)
-        elif output_format == ModelOutputFormat.subset:
-            self.output_processor = tfms.OutputSetTransformation(output_repr_size, num_output_words)
-        elif output_format == ModelOutputFormat.sequence:
-            self.output_processor = tfms.OutputSequenceTransformation(output_repr_size, output_repr_size, num_output_words)
-        self.parameterized.append(self.output_processor)
 
         if setup:
             self.setup()
@@ -254,28 +259,35 @@ class Model( object ):
             final_flat_gstate = [x[-1] for x in all_flat_gstates]
             final_gstate = GraphState.unflatten_from_const_size(final_flat_gstate)
 
-            query_gstate = self.query_node_state_updater.process(final_gstate, query_repr)
-            propagated_gstate = self.final_propagator.process_multiple(query_gstate, self.final_propagate)
-            aggregated_repr = self.aggregator.process(propagated_gstate) # shape (n_batch, output_repr_size)
-            
-            max_seq_len = correct_output.shape[1]
-            if self.output_format == ModelOutputFormat.sequence:
-                final_output = self.output_processor.process(aggregated_repr, max_seq_len) # shape (n_batch, ?, num_output_words)
-            else:
-                final_output = self.output_processor.process(aggregated_repr)
+            if self.train_with_query:
+                query_gstate = self.query_node_state_updater.process(final_gstate, query_repr)
+                propagated_gstate = self.final_propagator.process_multiple(query_gstate, self.final_propagate)
+                aggregated_repr = self.aggregator.process(propagated_gstate) # shape (n_batch, output_repr_size)
+                
+                max_seq_len = correct_output.shape[1]
+                if self.output_format == ModelOutputFormat.sequence:
+                    final_output = self.output_processor.process(aggregated_repr, max_seq_len) # shape (n_batch, ?, num_output_words)
+                else:
+                    final_output = self.output_processor.process(aggregated_repr)
 
-            if self.output_format == ModelOutputFormat.subset:
-                elemwise_loss = T.nnet.binary_crossentropy(final_output, correct_output)
-                query_loss = T.sum(elemwise_loss)
+                if self.output_format == ModelOutputFormat.subset:
+                    elemwise_loss = T.nnet.binary_crossentropy(final_output, correct_output)
+                    query_loss = T.sum(elemwise_loss)
+                else:
+                    flat_final_output = final_output.reshape([-1, self.num_output_words])
+                    flat_correct_output = correct_output.reshape([-1, self.num_output_words])
+                    timewise_loss = T.nnet.categorical_crossentropy(flat_final_output, flat_correct_output)
+                    query_loss = T.sum(timewise_loss)
+                query_loss = query_loss/T.cast(n_batch, 'floatX')
+                info["query_loss"] = query_loss
             else:
-                flat_final_output = final_output.reshape([-1, self.num_output_words])
-                flat_correct_output = correct_output.reshape([-1, self.num_output_words])
-                timewise_loss = T.nnet.categorical_crossentropy(flat_final_output, flat_correct_output)
-                query_loss = T.sum(timewise_loss)
-            query_loss = query_loss/T.cast(n_batch, 'floatX')
-            info["query_loss"] = query_loss
+                final_output = T.zeros([])
 
-            full_loss = (avg_graph_loss + query_loss) if with_correct_graph else query_loss
+            full_loss = np.array(0.0,np.float32)
+            if with_correct_graph:
+                full_loss = full_loss + avg_graph_loss
+            if self.train_with_query:
+                full_loss = full_loss + query_loss
             full_loss = T.opt.Assert("Full loss was nan!")(full_loss, T.invert(T.isnan(full_loss)))
 
             full_flat_gstates = [T.concatenate([a,T.shape_padleft(b),T.shape_padleft(c)],0).swapaxes(0,1)
@@ -284,7 +296,7 @@ class Model( object ):
                                                      propagated_gstate.flatten())]
             return full_loss, final_output, full_flat_gstates, max_seq_len, info
 
-        train_loss, _, full_flat_gstates, _, train_info = _build(True)
+        train_loss, _, full_flat_gstates, _, train_info = _build(self.train_with_graph)
         adam_updates = Adam(train_loss, self.params)
 
         self.info_keys = list(train_info.keys())
@@ -298,11 +310,13 @@ class Model( object ):
                                         [train_loss]+list(train_info.values()),
                                         updates=adam_updates,
                                         allow_input_downcast=True,
+                                        on_unused_input='ignore',
                                         mode=mode)
 
         self.eval_fn = theano.function( [input_words, query_words, correct_output, graph_num_new_nodes, graph_new_node_strengths, graph_new_node_ids, graph_new_edges],
                                         [train_loss]+list(train_info.values()),
                                         allow_input_downcast=True,
+                                        on_unused_input='ignore',
                                         mode=mode)
 
         self.debug_test_fn = theano.function( [input_words, query_words, correct_output, graph_num_new_nodes, graph_new_node_strengths, graph_new_node_ids, graph_new_edges],
@@ -315,6 +329,7 @@ class Model( object ):
         self.test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
                                         [final_output] + full_flat_gstates,
                                         allow_input_downcast=True,
+                                        on_unused_input='ignore',
                                         mode=mode)
 
     def train(self, *args, **kwargs):

@@ -35,6 +35,9 @@ def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, 
                     dynamic_nodes=dynamic_nodes,
                     nodes_mutable=mutable_nodes,
                     intermediate_propagate=(5 if propagate_intermediate else 0),
+                    best_node_match_only=True,
+                    train_with_graph=True,
+                    train_with_query=True,
                     setup=True,
                     check_nan=check_nan)
 
