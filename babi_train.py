@@ -5,6 +5,7 @@ import model
 import random
 import babi_graph_parse
 from graceful_interrupt import GracefulInterruptHandler
+from pprint import pformat
 
 BATCH_SIZE = 10
 
@@ -80,23 +81,23 @@ def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, 
         for i in range(start+1,start+num_updates+1):
             cur_bucket = random.choice(story_buckets)
             sampled_batch = sample_batch(cur_bucket, batch_size, len_answers, output_format)
-            loss = m.train_fn(*sampled_batch)
+            loss, info = m.train(*sampled_batch)
             with open(os.path.join(outputdir,'data.csv'),'a') as f:
                 if i == 1:
                     f.seek(0)
                     f.truncate()
-                    f.write("iter, loss, \n")
-                f.write("{}, {}\n".format(i,loss))
+                    f.write("iter, loss," + ", ".join(k for k,v in sorted(info.items())) + "\n")
+                f.write("{}, {},".format(i,loss) + ", ".join(str(v) for k,v in sorted(info.items())) + "\n")
             if i % 1 == 0:
-                print("update {}: {}".format(i,loss))
+                print("update {}: {}\n{}".format(i,loss,pformat(info)))
             if i % 1000 == 0:
                 if validation_buckets is not None:
                     cur_bucket = random.choice(validation_buckets)
                     sampled_batch = sample_batch(cur_bucket, batch_size, len_answers, output_format)
-                    valid_loss = m.eval_fn(*sampled_batch)
-                    print("validation at {}: {}".format(i,valid_loss))
+                    valid_loss, valid_info = m.eval(*sampled_batch)
+                    print("validation at {}: {}\n{}".format(i,valid_loss,pformat(valid_info)))
                     with open(os.path.join(outputdir,'valid.csv'),'a') as f:
-                        f.write("{}, {}\n".format(i,valid_loss))
+                        f.write("{}, {},".format(i,valid_loss) + ", ".join(str(v) for k,v in sorted(valid_info.items())) + "\n")
                 pickle.dump(m.params, open(os.path.join(outputdir, 'params{}.p'.format(i)), 'wb'))
             if interrupt_h.interrupted:
                 break

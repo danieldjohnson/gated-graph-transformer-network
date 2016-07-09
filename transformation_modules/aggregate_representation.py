@@ -37,7 +37,7 @@ class AggregateRepresentationTransformation( object ):
         activations = flat_activations.reshape([gstate.n_batch, gstate.n_nodes, self._representation_width+1])
 
         activation_strengths = activations[:,:,0]
-        existence_penalty = T.log(gstate.node_strengths)
+        existence_penalty = T.log(gstate.node_strengths + EPSILON) # TODO: consider removing epsilon here
         selector = T.shape_padright(T.nnet.softmax(activation_strengths + existence_penalty))
         representations = T.tanh(activations[:,:,1:])
 

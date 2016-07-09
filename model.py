@@ -134,6 +134,7 @@ class Model( object ):
         graph_new_edges = T.TensorType('floatX', (False,)*5)()
 
         def _build(with_correct_graph):
+            info = {}
             # Process each sentence, flattened to (?, sentence_len)
             flat_input_words = input_words.reshape([-1, sentence_len])
             flat_input_reprs = self.input_transformer.process(flat_input_words) # shape (?, input_repr_size)
@@ -142,7 +143,6 @@ class Model( object ):
             query_repr = self.input_transformer.process(query_words)
 
             def _iter_fn(input_repr, gstate, correct_num_new_nodes=None, correct_new_strengths=None, correct_new_node_ids=None, correct_edges=None):
-                graph_loss = None
                 # If necessary, update node state
                 if self.nodes_mutable:
                     gstate = self.node_state_updater.process(gstate, input_repr)
@@ -176,10 +176,11 @@ class Model( object ):
                         # so log(x) = log(kx) - log(gamma(k+1))
                         log_rep_factor = T.gammaln(T.cast(self.new_nodes_per_iter - correct_num_new_nodes + 1, 'floatX'))
                         scaled_ll = full_ll - log_rep_factor
-                        graph_loss = -scaled_ll
+                        node_loss = -scaled_ll
                         # now substitute in the correct nodes
                         gstate = gstate.with_additional_nodes(correct_new_strengths, correct_new_node_ids)
                     else:
+                        node_loss = np.array(0.0,np.float32)
                         gstate = gstate.with_additional_nodes(new_strengths, new_ids)
 
                 # Update edge state
@@ -188,9 +189,8 @@ class Model( object ):
                     cropped_correct_edges = correct_edges[:,:gstate.n_nodes,:gstate.n_nodes,:]
                     edge_lls = cropped_correct_edges * T.log(gstate.edge_strengths + util.EPSILON) + (1-cropped_correct_edges) * T.log(1-gstate.edge_strengths + util.EPSILON)
                     edge_loss = -T.sum(edge_lls, axis=[1,2,3])
-                    graph_loss = edge_loss if graph_loss is None else graph_loss + edge_loss
                     gstate = gstate.with_updates(edge_strengths=cropped_correct_edges)
-                    return gstate, graph_loss
+                    return gstate, node_loss, edge_loss
                 else:
                     return gstate
 
@@ -205,13 +205,14 @@ class Model( object ):
                 gstate = GraphState.unflatten_from_const_size(flat_graph_state)
 
                 if with_correct_graph:
-                    gstate, loss = _iter_fn(input_repr, gstate, c_num_new_nodes, c_new_strengths, c_new_node_ids, c_edges)
+                    gstate, node_loss, edge_loss = _iter_fn(input_repr, gstate, c_num_new_nodes, c_new_strengths, c_new_node_ids, c_edges)
                 else:
                     gstate = _iter_fn(input_repr, gstate)
 
                 retvals = gstate.flatten_to_const_size(pad_graph_size)
                 if with_correct_graph:
-                    retvals.append(loss)
+                    retvals.append(node_loss)
+                    retvals.append(edge_loss)
                 return retvals
 
             if self.dynamic_nodes:
@@ -232,12 +233,16 @@ class Model( object ):
                 sequences.append(graph_new_node_strengths.swapaxes(0,1))
                 sequences.append(graph_new_node_ids.swapaxes(0,1))
                 sequences.append(graph_new_edges.swapaxes(0,1))
-                outputs_info.append(None)
+                outputs_info.extend([None, None])
             all_scan_out, _ = theano.scan(_scan_fn, sequences=sequences, outputs_info=outputs_info, non_sequences=[pad_graph_size])
             if with_correct_graph:
-                all_flat_gstates = all_scan_out[:-1]
-                graph_losses = all_scan_out[-1]
-                graph_loss = T.sum(graph_losses)/T.cast(input_words.shape[1], 'floatX')
+                all_flat_gstates = all_scan_out[:-2]
+                node_loss, edge_loss = all_scan_out[-2:]
+                reduced_node_loss = T.sum(node_loss)/T.cast(n_batch, 'floatX')
+                reduced_edge_loss = T.sum(edge_loss)/T.cast(n_batch, 'floatX')
+                avg_graph_loss = (reduced_node_loss + reduced_edge_loss)/T.cast(input_words.shape[1], 'floatX')
+                info["node_loss"]=reduced_node_loss
+                info["edge_loss"]=reduced_edge_loss
             else:
                 all_flat_gstates = all_scan_out
             final_flat_gstate = [x[-1] for x in all_flat_gstates]
@@ -255,26 +260,28 @@ class Model( object ):
 
             if self.output_format == ModelOutputFormat.subset:
                 elemwise_loss = T.nnet.binary_crossentropy(final_output, correct_output)
-                full_loss = T.sum(elemwise_loss)
+                query_loss = T.sum(elemwise_loss)
             else:
                 flat_final_output = final_output.reshape([-1, self.num_output_words])
                 flat_correct_output = correct_output.reshape([-1, self.num_output_words])
                 timewise_loss = T.nnet.categorical_crossentropy(flat_final_output, flat_correct_output)
-                full_loss = T.sum(timewise_loss)
+                query_loss = T.sum(timewise_loss)
+            query_loss = query_loss/T.cast(n_batch, 'floatX')
+            info["query_loss"] = query_loss
 
-            if with_correct_graph:
-                full_loss = full_loss + graph_loss
-
-            loss = full_loss/T.cast(n_batch, 'floatX')
+            full_loss = (avg_graph_loss + query_loss) if with_correct_graph else query_loss
+            full_loss = T.opt.Assert("Full loss was nan!")(full_loss, T.invert(T.isnan(full_loss)))
 
             full_flat_gstates = [T.concatenate([a,T.shape_padleft(b),T.shape_padleft(c)],0).swapaxes(0,1)
                                     for a,b,c in zip(all_flat_gstates,
                                                      query_gstate.flatten(),
                                                      propagated_gstate.flatten())]
-            return loss, final_output, full_flat_gstates, max_seq_len
+            return full_loss, final_output, full_flat_gstates, max_seq_len, info
 
-        train_loss, _, full_flat_gstates, _ = _build(True)
+        train_loss, _, full_flat_gstates, _, train_info = _build(True)
         adam_updates = Adam(train_loss, self.params)
+
+        self.info_keys = list(train_info.keys())
 
         if self.check_nan:
             mode = NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=True)
@@ -282,13 +289,13 @@ class Model( object ):
             mode = theano.Mode()
         mode = mode.excluding("scanOp_pushout_output")
         self.train_fn = theano.function([input_words, query_words, correct_output, graph_num_new_nodes, graph_new_node_strengths, graph_new_node_ids, graph_new_edges],
-                                        train_loss,
+                                        [train_loss]+list(train_info.values()),
                                         updates=adam_updates,
                                         allow_input_downcast=True,
                                         mode=mode)
 
         self.eval_fn = theano.function( [input_words, query_words, correct_output, graph_num_new_nodes, graph_new_node_strengths, graph_new_node_ids, graph_new_edges],
-                                        train_loss,
+                                        [train_loss]+list(train_info.values()),
                                         allow_input_downcast=True,
                                         mode=mode)
 
@@ -298,11 +305,21 @@ class Model( object ):
                                         on_unused_input='ignore',
                                         mode=mode)
 
-        test_loss, final_output, full_flat_gstates, max_seq_len = _build(False)
+        test_loss, final_output, full_flat_gstates, max_seq_len, _ = _build(False)
         self.test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
                                         [final_output] + full_flat_gstates,
                                         allow_input_downcast=True,
                                         mode=mode)
 
+    def train(self, *args, **kwargs):
+        stuff = self.train_fn(*args, **kwargs)
+        loss = stuff[0]
+        info = dict(zip(self.info_keys, stuff[1:]))
+        return loss, info
 
+    def eval(self, *args, **kwargs):
+        stuff = self.eval_fn(*args, **kwargs)
+        loss = stuff[0]
+        info = dict(zip(self.info_keys, stuff[1:]))
+        return loss, info
 
