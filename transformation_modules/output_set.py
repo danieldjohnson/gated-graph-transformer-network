@@ -3,6 +3,7 @@ import theano.tensor as T
 import numpy as np
 
 from util import *
+from layer import *
 from graph_state import GraphState, GraphStateSpec
 
 class OutputSetTransformation( object ):
@@ -13,12 +14,11 @@ class OutputSetTransformation( object ):
         self._input_width = input_width
         self._num_categories = num_categories
 
-        self._transform_W = theano.shared(init_params([input_width, num_categories]), "output_set_W")
-        self._transform_b = theano.shared(init_params([num_categories]), "output_set_b")
+        self._transform_stack = LayerStack(input_width, num_categories, activation=T.nnet.sigmoid, name="output_set")
 
     @property
     def params(self):
-        return [self._transform_W, self._transform_b]
+        return self._transform_stack.params
 
     def process(self, input_vector):
         """
@@ -31,5 +31,5 @@ class OutputSetTransformation( object ):
         Returns: Set distribution of shape (n_batch, 1, num_categories), where each value is independent from
             the others.
         """
-        transformed = do_layer(T.nnet.sigmoid, input_vector, self._transform_W, self._transform_b)
+        transformed = self._transform_stack.process(input_vector)
         return T.shape_padaxis(transformed,1)

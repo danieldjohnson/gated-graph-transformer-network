@@ -3,6 +3,7 @@ import theano.tensor as T
 import numpy as np
 
 from util import *
+from layer import *
 from graph_state import GraphState, GraphStateSpec
 from strength_weighted_gru import StrengthWeightedGRULayer
 
@@ -20,12 +21,11 @@ class EdgeStateUpdateTransformation( object ):
         self._graph_spec = graph_spec
         self._process_input_size = input_width + 2*(graph_spec.num_node_ids + graph_spec.node_state_size)
 
-        self._update_W = theano.shared(init_params([self._process_input_size, 2*graph_spec.num_edge_types]), "edge_update_W")
-        self._update_b = theano.shared(init_params([2*graph_spec.num_edge_types], shift=-3.0), "edge_update_b")
-
+        self._update_stack = LayerStack(self._process_input_size, 2*graph_spec.num_edge_types, [self._process_input_size], activation=T.nnet.sigmoid, bias_shift=-3.0, name="edge_update")
+        
     @property
     def params(self):
-        return [self._update_W, self._update_b]
+        return self._update_stack.params
 
     @property
     def num_dropout_masks(self):
@@ -53,7 +53,7 @@ class EdgeStateUpdateTransformation( object ):
 
         # we flatten to process updates
         flat_input = full_input.reshape([-1, self._process_input_size])
-        flat_result = do_layer(T.nnet.sigmoid, flat_input, self._update_W, self._update_b)
+        flat_result = self._update_stack.process(flat_input)
         result = flat_result.reshape([gstate.n_batch, gstate.n_nodes, gstate.n_nodes, self._graph_spec.num_edge_types, 2])
         should_set = result[:,:,:,:,0]
         should_clear = result[:,:,:,:,1]

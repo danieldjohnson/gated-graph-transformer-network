@@ -3,6 +3,7 @@ import theano.tensor as T
 import numpy as np
 
 from util import *
+from layer import *
 from graph_state import GraphState, GraphStateSpec
 from base_gru import BaseGRULayer
 
@@ -17,12 +18,11 @@ class OutputSequenceTransformation( object ):
         self._num_words = num_words
 
         self._seq_gru = BaseGRULayer(input_width, state_size, name="output_seq_gru")
-        self._transform_W = theano.shared(init_params([state_size, num_words]), "output_seq_transf_W")
-        self._transform_b = theano.shared(init_params([num_words]), "output_seq_transf_b")
+        self._transform_stack = LayerStack(state_size, num_words, activation=T.nnet.softmax, name="output_seq_transf")
 
     @property
     def params(self):
-        return self._seq_gru.params + [self._transform_W, self._transform_b]
+        return self._seq_gru.params + self._transform_stack.params
 
     @property
     def num_dropout_masks(self):
@@ -48,7 +48,7 @@ class OutputSequenceTransformation( object ):
 
         # all_out is of shape (seq_len, n_batch, state_size). Squash and apply layer
         flat_out = all_out.reshape([-1, self._state_size])
-        flat_final = do_layer(T.nnet.softmax, flat_out, self._transform_W, self._transform_b)
+        flat_final = self._transform_stack.process(flat_out)
         final = flat_final.reshape([seq_len, n_batch, self._num_words]).dimshuffle([1,0,2])
 
         return final

@@ -3,6 +3,7 @@ import theano.tensor as T
 import numpy as np
 
 from util import *
+from layer import *
 from graph_state import GraphState, GraphStateSpec
 from base_gru import BaseGRULayer
 
@@ -22,14 +23,12 @@ class PropagationTransformation( object ):
         self._graph_spec = graph_spec
         self._process_input_size = graph_spec.num_node_ids + graph_spec.node_state_size
 
-        self._transfer_W = theano.shared(init_params([self._process_input_size, 2 * graph_spec.num_edge_types * transfer_size]), "propagation_transfer_W")
-        self._transfer_b = theano.shared(init_params([2 * graph_spec.num_edge_types * transfer_size]), "propagation_transfer_b")
-
+        self._transfer_stack = LayerStack(self._process_input_size, 2 * graph_spec.num_edge_types * transfer_size, activation=self._transfer_activation, name="propagation_transfer")
         self._propagation_gru = BaseGRULayer(graph_spec.num_node_ids + self._transfer_size, graph_spec.node_state_size, name="propagation")
 
     @property
     def params(self):
-        return self._propagation_gru.params + [self._transfer_W, self._transfer_b]
+        return self._propagation_gru.params +  self._transfer_stack.params
 
     @property
     def num_dropout_masks(self):
@@ -52,7 +51,7 @@ class PropagationTransformation( object ):
 
         node_obs = T.concatenate([gstate.node_ids, gstate.node_states],2)
         flat_node_obs = node_obs.reshape([-1, self._process_input_size])
-        transformed = do_layer(self._transfer_activation, flat_node_obs, self._transfer_W, self._transfer_b)\
+        transformed = self._transfer_stack.process(flat_node_obs)\
                             .reshape([gstate.n_batch, gstate.n_nodes, 2*self._graph_spec.num_edge_types, self._transfer_size])
         scaled_transformed = transformed * T.shape_padright(T.shape_padright(gstate.node_strengths))
         # scaled_transformed is of shape (n_batch, n_nodes, 2*num_edge_types, transfer_size)

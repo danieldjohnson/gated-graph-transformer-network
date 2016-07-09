@@ -3,6 +3,7 @@ import theano.tensor as T
 import numpy as np
 
 import itertools
+import collections
 
 EPSILON = np.array(1e-8, np.float32)
 
@@ -85,6 +86,10 @@ def reduce_log_sum(tensor, axis=None, guaranteed_finite=True):
     logsum = maxval + T.log(reduced_sum)
     return logsum
 
-
+idx_map = collections.defaultdict(lambda:0)
+def get_unique_name(cls):
+    name = "{}{}".format(cls.__name__, idx_map[cls])
+    idx_map[cls] += 1
+    return name
 
 

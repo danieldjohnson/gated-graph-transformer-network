@@ -3,6 +3,7 @@ import theano.tensor as T
 import numpy as np
 
 from util import *
+from layer import *
 from graph_state import GraphState, GraphStateSpec
 from base_gru import BaseGRULayer
 
@@ -22,16 +23,14 @@ class NewNodesTransformation( object ):
         self._proposal_width = proposal_width
 
         self._proposer_gru = BaseGRULayer(input_width, proposal_width, name="newnodes_proposer")
-        self._propose_W = theano.shared(init_params([proposal_width, 1+graph_spec.num_node_ids]), "newnodes_propose_W")
-        # Bias toward making nodes. Note that we can shift everything, since softmax doesn't care about constants
-        self._propose_b = theano.shared(init_params([1+graph_spec.num_node_ids], shift=3.0), "newnodes_propose_b")
-
-        self._vote_W = theano.shared(init_params([2*graph_spec.num_node_ids + graph_spec.node_state_size, 1]), "newnodes_vote_W")
-        self._vote_b = theano.shared(init_params([1], shift=-3.0), "newnodes_vote_b")
+        
+        self._proposer_stack = LayerStack(proposal_width, 1+graph_spec.num_node_ids, [proposal_width], bias_shift=3.0, name="newnodes_proposer_post")
+        isize = 2*graph_spec.num_node_ids + graph_spec.node_state_size
+        self._vote_stack = LayerStack(isize, 1, [isize], activation=T.nnet.sigmoid, bias_shift=-3.0, name="newnodes_vote")
 
     @property
     def params(self):
-        return self._proposer_gru.params + [self._propose_W, self._propose_b, self._vote_W, self._vote_b]
+        return self._proposer_gru.params + self._proposer_stack.params + self._vote_stack.params
 
     @property
     def num_dropout_masks(self):
@@ -68,7 +67,7 @@ class NewNodesTransformation( object ):
 
         # raw_proposal_acts is of shape (candidate, n_batch, blah)
         flat_raw_acts = raw_proposal_acts.reshape([-1, self._proposal_width])
-        flat_processed_acts = do_layer(lambda x:x, flat_raw_acts, self._propose_W, self._propose_b)
+        flat_processed_acts = self._proposer_stack.process(flat_raw_acts)
         candidate_strengths = T.nnet.sigmoid(flat_processed_acts[:,0]).reshape([max_candidates, n_batch])
         candidate_ids = T.nnet.softmax(flat_processed_acts[:,1:]).reshape([max_candidates, n_batch, self._graph_spec.num_node_ids])
 
@@ -80,7 +79,7 @@ class NewNodesTransformation( object ):
         node_state_part = T.shape_padaxis(gstate.node_states, 0)
         full_vote_input = broadcast_concat([node_id_part, node_state_part, candidate_id_part], 3)
         flat_vote_input = full_vote_input.reshape([-1, full_vote_input.shape[-1]])
-        vote_result = do_layer(T.nnet.sigmoid, flat_vote_input, self._vote_W, self._vote_b)
+        vote_result = self._vote_stack.process(flat_vote_input)
         final_votes_no = vote_result.reshape([max_candidates, n_batch, n_nodes])
         weighted_votes_yes = 1 - final_votes_no * T.shape_padleft(gstate.node_strengths)
         # Add in the strength vote
