@@ -65,7 +65,7 @@ def set_params(params, saved_params):
     for param,saved in zip(params, saved_params):
         param.set_value(saved.get_value())
 
-def reduce_log_sum(tensor, axis=None, guaranteed_finite=True):
+def reduce_log_sum(tensor, axis=None, guaranteed_finite=False):
     """
     Sum probabilities in the log domain, i.e return
         log(e^vec[0] + e^vec[1] + ...)

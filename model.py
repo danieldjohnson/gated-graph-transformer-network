@@ -23,7 +23,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, dynamic_nodes=True, nodes_mutable=True, intermediate_propagate=0, setup=True, check_nan=False):
+    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, dynamic_nodes=True, nodes_mutable=True, best_node_match_only=True, intermediate_propagate=0, setup=True, check_nan=False):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -38,6 +38,8 @@ class Model( object ):
             new_nodes_per_iter: How many nodes to add at each sentence iteration
             output_format: Member of ModelOutputFormat, giving the format of the output
             final_propagate: How many steps to propagate info for each input sentence
+            best_node_match_only: If the network should only train on the ordering with the
+                best match
             intermediate_propagate: How many steps to propagate info for each input sentence
             dynamic_nodes: Whether to dynamically create nodes as sentences are read. If false,
                 a node with each id will be created at task start
@@ -57,6 +59,7 @@ class Model( object ):
         self.new_nodes_per_iter = new_nodes_per_iter
         self.output_format = output_format
         self.final_propagate = final_propagate
+        self.best_node_match_only = best_node_match_only
         self.intermediate_propagate = intermediate_propagate
         self.dynamic_nodes = dynamic_nodes
         self.nodes_mutable = nodes_mutable
@@ -166,17 +169,20 @@ class Model( object ):
                         strength_ll = permuted_correct_str * T.log(ext_new_str + util.EPSILON) + (1-permuted_correct_str) * T.log(1-ext_new_str + util.EPSILON)
                         ids_ll = permuted_correct_ids * T.log(ext_new_ids  + util.EPSILON)
                         reduced_perm_lls = T.sum(strength_ll, axis=2) + T.sum(ids_ll, axis=[2,3])
-                        full_ll = util.reduce_log_sum(reduced_perm_lls, 1)
-                        # Note that some of these permutations are identical, since we likely did not add the maximum
-                        # amount of nodes. Thus we will have added repeated elements here.
-                        # We have log(x+x+...+x) = log(kx), where k is the repetition factor and x is the probability we want
-                        # log(kx) = log(k) + log(x)
-                        # Our repetition factor k is given by (new_nodes_per_iter - correct_num_new_nodes)!
-                        # Recall that n! = gamma(n+1)
-                        # so log(x) = log(kx) - log(gamma(k+1))
-                        log_rep_factor = T.gammaln(T.cast(self.new_nodes_per_iter - correct_num_new_nodes + 1, 'floatX'))
-                        scaled_ll = full_ll - log_rep_factor
-                        node_loss = -scaled_ll
+                        if self.best_node_match_only:
+                            node_loss = -T.max(reduced_perm_lls, 1)
+                        else:
+                            full_ll = util.reduce_log_sum(reduced_perm_lls, 1)
+                            # Note that some of these permutations are identical, since we likely did not add the maximum
+                            # amount of nodes. Thus we will have added repeated elements here.
+                            # We have log(x+x+...+x) = log(kx), where k is the repetition factor and x is the probability we want
+                            # log(kx) = log(k) + log(x)
+                            # Our repetition factor k is given by (new_nodes_per_iter - correct_num_new_nodes)!
+                            # Recall that n! = gamma(n+1)
+                            # so log(x) = log(kx) - log(gamma(k+1))
+                            log_rep_factor = T.gammaln(T.cast(self.new_nodes_per_iter - correct_num_new_nodes + 1, 'floatX'))
+                            scaled_ll = full_ll - log_rep_factor
+                            node_loss = -scaled_ll
                         # now substitute in the correct nodes
                         gstate = gstate.with_additional_nodes(correct_new_strengths, correct_new_node_ids)
                     else:
