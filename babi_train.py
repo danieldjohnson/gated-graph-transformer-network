@@ -82,6 +82,9 @@ def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, 
             cur_bucket = random.choice(story_buckets)
             sampled_batch = sample_batch(cur_bucket, batch_size, len_answers, output_format)
             loss, info = m.train(*sampled_batch)
+            if np.any(np.isnan(loss)):
+                print("Loss at timestep {} was nan! Aborting".format(i))
+                break
             with open(os.path.join(outputdir,'data.csv'),'a') as f:
                 if i == 1:
                     f.seek(0)
