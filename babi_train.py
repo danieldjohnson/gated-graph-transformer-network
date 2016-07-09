@@ -86,7 +86,11 @@ def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, 
                 if i == 1:
                     f.seek(0)
                     f.truncate()
-                    f.write("iter, loss," + ", ".join(k for k,v in sorted(info.items())) + "\n")
+                    keylist = "iter, loss, " + ", ".join(k for k,v in sorted(info.items())) + "\n"
+                    f.write(keylist)
+                    if validation_buckets is not None:
+                        with open(os.path.join(outputdir,'valid.csv'),'w') as f2:
+                            f2.write(keylist)
                 f.write("{}, {},".format(i,loss) + ", ".join(str(v) for k,v in sorted(info.items())) + "\n")
             if i % 1 == 0:
                 print("update {}: {}\n{}".format(i,loss,pformat(info)))
@@ -97,7 +101,7 @@ def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, 
                     valid_loss, valid_info = m.eval(*sampled_batch)
                     print("validation at {}: {}\n{}".format(i,valid_loss,pformat(valid_info)))
                     with open(os.path.join(outputdir,'valid.csv'),'a') as f:
-                        f.write("{}, {},".format(i,valid_loss) + ", ".join(str(v) for k,v in sorted(valid_info.items())) + "\n")
+                        f.write("{}, {}, ".format(i,valid_loss) + ", ".join(str(v) for k,v in sorted(valid_info.items())) + "\n")
                 pickle.dump(m.params, open(os.path.join(outputdir, 'params{}.p'.format(i)), 'wb'))
             if interrupt_h.interrupted:
                 break
