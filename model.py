@@ -24,7 +24,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, dynamic_nodes=True, nodes_mutable=True, best_node_match_only=True, intermediate_propagate=0, train_with_graph=True, train_with_query=True, setup=True, check_mode=None):
+    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, dynamic_nodes=True, nodes_mutable=True, wipe_node_state=True, best_node_match_only=True, intermediate_propagate=0, train_with_graph=True, train_with_query=True, setup=True, check_mode=None):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -45,6 +45,7 @@ class Model( object ):
             dynamic_nodes: Whether to dynamically create nodes as sentences are read. If false,
                 a node with each id will be created at task start
             nodes_mutable: Whether nodes should update their state based on input
+            wipe_node_state: Whether to wipe node state at the query
             train_with_graph: If True, use the graph to train. Otherwise ignore the graph
             train_with_query: If True, use the query to train. Otherwise ignore the query
             setup: Whether or not to automatically set up the model
@@ -66,6 +67,7 @@ class Model( object ):
         self.intermediate_propagate = intermediate_propagate
         self.dynamic_nodes = dynamic_nodes
         self.nodes_mutable = nodes_mutable
+        self.wipe_node_state = wipe_node_state
         self.train_with_graph = train_with_graph
         self.train_with_query = train_with_query
         self.check_mode = check_mode
@@ -273,6 +275,8 @@ class Model( object ):
             final_gstate = GraphState.unflatten_from_const_size(final_flat_gstate)
 
             if self.train_with_query:
+                if self.wipe_node_state:
+                    final_gstate = final_gstate.with_updates(node_states=T.zeros_like(final_gstate.node_states))
                 query_gstate = self.query_node_state_updater.process(final_gstate, query_repr)
                 propagated_gstate = self.final_propagator.process_multiple(query_gstate, self.final_propagate)
                 aggregated_repr = self.aggregator.process(propagated_gstate) # shape (n_batch, output_repr_size)
