@@ -61,9 +61,14 @@ def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, 
     if not os.path.exists(outputdir):
         os.makedirs(outputdir)
 
-    if visualize:
+    if visualize is not False:
+        if visualize is True:
+            source = bucketed
+        else:
+            bucket, story = visualize
+            source = [[bucketed[bucket][story]]]
         print("Starting to visualize...")
-        babi_train.visualize(m, bucketed, wordlist, eff_anslist, output_format, outputdir)
+        babi_train.visualize(m, source, wordlist, eff_anslist, output_format, outputdir)
         print("Wrote visualization files to {}.".format(outputdir))
     elif debugtest:
         print("Starting debug test...")
@@ -87,7 +92,7 @@ parser.add_argument('--batch-size', default="10", type=int, help="Batch size to 
 parser.add_argument('--validation', metavar="VALIDATION_FILE", default=None, help="Filename of validation tasks")
 parser.add_argument('--check-nan', dest="check_mode", action="store_const", const="nan", help="Check for NaN. Slows execution")
 parser.add_argument('--check-debug', dest="check_mode", action="store_const", const="debug", help="Debug mode. Slows execution")
-parser.add_argument('--visualize', action="store_true", help="Visualise current state instead of training")
+parser.add_argument('--visualize', nargs="?", const=True, default=False, type=lambda s:[int(x) for x in s.split(',')], help="Visualise current state instead of training. Optional parameter to fix ")
 parser.add_argument('--debugtest', action="store_true", help="Debug the training state")
 resume_group = parser.add_mutually_exclusive_group()
 resume_group.add_argument('--resume', nargs=2, metavar=('TIMESTEP', 'PARAMFILE'), default=None, help='Where to restore from: timestep, and file to load')

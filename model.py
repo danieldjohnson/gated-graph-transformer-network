@@ -160,6 +160,7 @@ class Model( object ):
                 if self.intermediate_propagate != 0:
                     gstate = self.intermediate_propagator.process_multiple(gstate, self.intermediate_propagate)
 
+                node_loss = None
                 # Propose and vote on new nodes
                 if self.dynamic_nodes:
                     new_strengths, new_ids = self.new_node_adder.get_candidates(gstate, input_repr, self.new_nodes_per_iter)
@@ -192,8 +193,8 @@ class Model( object ):
                         # now substitute in the correct nodes
                         gstate = gstate.with_additional_nodes(correct_new_strengths, correct_new_node_ids)
                     else:
-                        node_loss = np.array(0.0,np.float32)
                         gstate = gstate.with_additional_nodes(new_strengths, new_ids)
+
 
                 # Update edge state
                 gstate = self.edge_state_updater.process(gstate, input_repr)
@@ -223,7 +224,8 @@ class Model( object ):
 
                 retvals = gstate.flatten_to_const_size(pad_graph_size)
                 if with_correct_graph:
-                    retvals.append(node_loss)
+                    if self.dynamic_nodes:
+                        retvals.append(node_loss)
                     retvals.append(edge_loss)
                 return retvals
 
@@ -245,16 +247,26 @@ class Model( object ):
                 sequences.append(graph_new_node_strengths.swapaxes(0,1))
                 sequences.append(graph_new_node_ids.swapaxes(0,1))
                 sequences.append(graph_new_edges.swapaxes(0,1))
-                outputs_info.extend([None, None])
+
+                if self.dynamic_nodes:
+                    outputs_info.extend([None])
+                outputs_info.extend([None])
             all_scan_out, _ = theano.scan(_scan_fn, sequences=sequences, outputs_info=outputs_info, non_sequences=[pad_graph_size])
             if with_correct_graph:
-                all_flat_gstates = all_scan_out[:-2]
-                node_loss, edge_loss = all_scan_out[-2:]
-                reduced_node_loss = T.sum(node_loss)/T.cast(n_batch, 'floatX')
-                reduced_edge_loss = T.sum(edge_loss)/T.cast(n_batch, 'floatX')
-                avg_graph_loss = (reduced_node_loss + reduced_edge_loss)/T.cast(input_words.shape[1], 'floatX')
-                info["node_loss"]=reduced_node_loss
-                info["edge_loss"]=reduced_edge_loss
+                if self.dynamic_nodes:
+                    all_flat_gstates = all_scan_out[:-2]
+                    node_loss, edge_loss = all_scan_out[-2:]
+                    reduced_node_loss = T.sum(node_loss)/T.cast(n_batch, 'floatX')
+                    reduced_edge_loss = T.sum(edge_loss)/T.cast(n_batch, 'floatX')
+                    avg_graph_loss = (reduced_node_loss + reduced_edge_loss)/T.cast(input_words.shape[1], 'floatX')
+                    info["node_loss"]=reduced_node_loss
+                    info["edge_loss"]=reduced_edge_loss
+                else:
+                    all_flat_gstates = all_scan_out[:-1]
+                    edge_loss = all_scan_out[-1]
+                    reduced_edge_loss = T.sum(edge_loss)/T.cast(n_batch, 'floatX')
+                    avg_graph_loss = reduced_edge_loss/T.cast(input_words.shape[1], 'floatX')
+                    info["edge_loss"]=reduced_edge_loss
             else:
                 all_flat_gstates = all_scan_out
             final_flat_gstate = [x[-1] for x in all_flat_gstates]
