@@ -77,7 +77,7 @@ class Model( object ):
         self.parameterized.append(self.input_transformer)
 
         if nodes_mutable:
-            self.node_state_updater = tfms.NodeStateUpdateTransformation(input_repr_size, propose_repr_size, graphspec)
+            self.node_state_updater = tfms.NodeStateUpdateTransformation(input_repr_size, graphspec)
             self.parameterized.append(self.node_state_updater)
 
         if intermediate_propagate != 0:
@@ -85,7 +85,7 @@ class Model( object ):
             self.parameterized.append(self.intermediate_propagator)
 
         if self.dynamic_nodes:
-            self.new_node_adder = tfms.NewNodesTransformation(input_repr_size, self.propose_repr_size, graphspec)
+            self.new_node_adder = tfms.NewNodesInformTransformation(input_repr_size, self.propose_repr_size, self.propose_repr_size, graphspec)
             self.parameterized.append(self.new_node_adder)
 
         self.edge_state_updater = tfms.EdgeStateUpdateTransformation(input_repr_size, graphspec)

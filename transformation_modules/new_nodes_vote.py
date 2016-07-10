@@ -7,7 +7,7 @@ from layer import *
 from graph_state import GraphState, GraphStateSpec
 from base_gru import BaseGRULayer
 
-class NewNodesTransformation( object ):
+class NewNodesVoteTransformation( object ):
     """
     Transforms a graph state by adding nodes, conditioned on an input vector
     """

@@ -134,7 +134,7 @@ function _graph_display(states,colormap,el,batch){
                 state_index: i,
                 strength: n_strength,
                 color: colormap.node_id[batch][time][i],
-                data: cur_n_ids[i].concat(cur_n_states[i].map(function(x){return (x+1.0)/2})),
+                data: [n_strength].concat(cur_n_ids[i],cur_n_states[i].map(function(x){return (x+1.0)/2})),
                 x: (i < data_nodes.length) ? data_nodes[i].x : 200+100*Math.random(),
                 y: (i < data_nodes.length) ? data_nodes[i].y : 200+100*Math.random(),
             });
