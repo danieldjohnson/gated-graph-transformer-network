@@ -8,7 +8,7 @@ import babi_train
 import babi_graph_parse
 from util import *
 
-def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, propagate_intermediate, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, check_nan):
+def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, propagate_intermediate, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, check_mode):
     output_format = model.ModelOutputFormat[output_format_str]
 
     prepped_stories = babi_graph_parse.prepare_stories(babi_graph_parse.get_stories(task_fn), dynamic_nodes)
@@ -39,7 +39,7 @@ def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, 
                     train_with_graph=True,
                     train_with_query=True,
                     setup=True,
-                    check_nan=check_nan)
+                    check_mode=check_mode)
 
     if resume_auto:
         paramfile = os.path.join(outputdir,'final_params.p')
@@ -85,7 +85,8 @@ parser.add_argument('--outputdir', default="output", help="Directory to save out
 parser.add_argument('--num-updates', default="10000", type=int, help="How many iterations to train")
 parser.add_argument('--batch-size', default="10", type=int, help="Batch size to use")
 parser.add_argument('--validation', metavar="VALIDATION_FILE", default=None, help="Filename of validation tasks")
-parser.add_argument('--check-nan', action="store_true", help="Check for NaN. Slows execution")
+parser.add_argument('--check-nan', dest="check_mode", action="store_const", const="nan", help="Check for NaN. Slows execution")
+parser.add_argument('--check-debug', dest="check_mode", action="store_const", const="debug", help="Debug mode. Slows execution")
 parser.add_argument('--visualize', action="store_true", help="Visualise current state instead of training")
 parser.add_argument('--debugtest', action="store_true", help="Debug the training state")
 resume_group = parser.add_mutually_exclusive_group()

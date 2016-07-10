@@ -12,6 +12,7 @@ from graph_state import GraphStateSpec, GraphState
 from adam import Adam
 
 from theano.compile.nanguardmode import NanGuardMode
+from theano.compile.debugmode import DebugMode
 
 class ModelOutputFormat( Enum ):
     category = 1
@@ -23,7 +24,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, dynamic_nodes=True, nodes_mutable=True, best_node_match_only=True, intermediate_propagate=0, train_with_graph=True, train_with_query=True, setup=True, check_nan=False):
+    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, dynamic_nodes=True, nodes_mutable=True, best_node_match_only=True, intermediate_propagate=0, train_with_graph=True, train_with_query=True, setup=True, check_mode=None):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -47,7 +48,7 @@ class Model( object ):
             train_with_graph: If True, use the graph to train. Otherwise ignore the graph
             train_with_query: If True, use the query to train. Otherwise ignore the query
             setup: Whether or not to automatically set up the model
-            check_nan: Whether to check for NaN
+            check_mode: If 'nan', run in NaNGuardMode. If 'debug', run in DebugMode
         """
         self.num_input_words = num_input_words
         self.num_output_words = num_output_words
@@ -67,7 +68,7 @@ class Model( object ):
         self.nodes_mutable = nodes_mutable
         self.train_with_graph = train_with_graph
         self.train_with_query = train_with_query
-        self.check_nan = check_nan
+        self.check_mode = check_mode
 
         graphspec = GraphStateSpec(num_node_ids, node_state_size, num_edge_types)
 
@@ -301,8 +302,10 @@ class Model( object ):
 
         self.info_keys = list(train_info.keys())
 
-        if self.check_nan:
+        if self.check_mode == 'nan':
             mode = NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=True)
+        elif self.check_mode == 'debug':
+            mode = DebugMode()
         else:
             mode = theano.Mode()
         mode = mode.excluding("scanOp_pushout_output")
