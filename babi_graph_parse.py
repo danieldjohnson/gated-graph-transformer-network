@@ -31,7 +31,7 @@ def parse_stories(lines):
             story = []
             questions = []
         if '\t' in line:
-            q, apre, supporting = line.split('\t')
+            q, apre = line.split('\t')[:2]
             a = apre.split(',')
             q = tokenize(q)
             substory = [x for x in story if x]
