@@ -143,7 +143,8 @@ function _graph_display(states,colormap,el,batch){
             for(var j=0; j<n_nodes; j++){
                 if(i==j)
                     continue;
-                var eff_str = cur_e_strengths[i][j].reduce(function(p,v){return p+v;},0);
+                var eff_str = Math.min(1,cur_e_strengths[i][j].reduce(function(p,v){return p+v;},0));
+                eff_str = eff_str * cur_n_strengths[i] * cur_n_strengths[j];
                 var c_edge = {
                     edge_index:i,
                     s:i,
