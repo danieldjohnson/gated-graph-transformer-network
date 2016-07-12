@@ -52,13 +52,16 @@ def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, 
 
     if resume_auto:
         paramfile = os.path.join(outputdir,'final_params.p')
-        with open(os.path.join(outputdir,'data.csv')) as f:
-            for line in f:
-                pass
-            lastline = line
-            start_idx = lastline.split(',')[0]
-        print("Automatically resuming from {} after iteration {}.".format(paramfile, start_idx))
-        resume = (start_idx, paramfile)
+        if os.path.isfile(paramfile):
+            with open(os.path.join(outputdir,'data.csv')) as f:
+                for line in f:
+                    pass
+                lastline = line
+                start_idx = lastline.split(',')[0]
+            print("Automatically resuming from {} after iteration {}.".format(paramfile, start_idx))
+            resume = (start_idx, paramfile)
+        else:
+            print("Didn't find anything to resume. Starting from the beginning...")
 
     if resume is not None:
         start_idx, paramfile = resume
