@@ -8,7 +8,7 @@ import babi_train
 import babi_graph_parse
 from util import *
 
-def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, check_mode):
+def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, check_mode):
     output_format = model.ModelOutputFormat[output_format_str]
 
     prepped_stories = babi_graph_parse.prepare_stories(babi_graph_parse.get_stories(task_fn), dynamic_nodes)
@@ -45,8 +45,8 @@ def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, 
                     wipe_node_state=wipe_node_state,
                     intermediate_propagate=(5 if propagate_intermediate else 0),
                     best_node_match_only=True,
-                    train_with_graph=True,
-                    train_with_query=True,
+                    train_with_graph=train_with_graph,
+                    train_with_query=train_with_query,
                     setup=True,
                     check_mode=check_mode)
 
@@ -97,6 +97,8 @@ parser.add_argument('--wipe-node-state', action="store_true", help="Wipe node st
 parser.add_argument('--direct-reference', action="store_true", help="Use direct reference for input, based on node names")
 parser.add_argument('--dynamic-nodes', action="store_true", help="Create nodes after each sentence. (Otherwise, create unique nodes at the beginning)")
 parser.add_argument('--propagate-intermediate', action="store_true", help="Run a propagation step after each sentence")
+parser.add_argument('--no-graph', dest='train_with_graph', action="store_false", help="Don't train using graph supervision")
+parser.add_argument('--no-query', dest='train_with_query', action="store_false", help="Don't train using query supervision")
 parser.add_argument('--outputdir', default="output", help="Directory to save output in")
 parser.add_argument('--num-updates', default="10000", type=int, help="How many iterations to train")
 parser.add_argument('--batch-size', default="10", type=int, help="Batch size to use")
