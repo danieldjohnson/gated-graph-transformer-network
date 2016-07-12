@@ -24,7 +24,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, dynamic_nodes=True, nodes_mutable=True, wipe_node_state=True, best_node_match_only=True, intermediate_propagate=0, train_with_graph=True, train_with_query=True, setup=True, check_mode=None):
+    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, word_node_mapping={},  dynamic_nodes=True, nodes_mutable=True, wipe_node_state=True, best_node_match_only=True, intermediate_propagate=0, train_with_graph=True, train_with_query=True, setup=True, check_mode=None):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -39,6 +39,7 @@ class Model( object ):
             new_nodes_per_iter: How many nodes to add at each sentence iteration
             output_format: Member of ModelOutputFormat, giving the format of the output
             final_propagate: How many steps to propagate info for each input sentence
+            word_node_mapping: Dictionary mapping word ids to node ids for direct reference in input
             best_node_match_only: If the network should only train on the ordering with the
                 best match
             intermediate_propagate: How many steps to propagate info for each input sentence
@@ -63,6 +64,7 @@ class Model( object ):
         self.new_nodes_per_iter = new_nodes_per_iter
         self.output_format = output_format
         self.final_propagate = final_propagate
+        self.word_node_mapping = word_node_mapping
         self.best_node_match_only = best_node_match_only
         self.intermediate_propagate = intermediate_propagate
         self.dynamic_nodes = dynamic_nodes
@@ -76,12 +78,16 @@ class Model( object ):
 
         self.parameterized = []
 
-        self.input_transformer = tfms.InputSequenceTransformation(num_input_words, input_repr_size)
+        self.input_transformer = tfms.InputSequenceDirectTransformation(num_input_words, num_node_ids, word_node_mapping, input_repr_size)
         self.parameterized.append(self.input_transformer)
 
         if nodes_mutable:
             self.node_state_updater = tfms.NodeStateUpdateTransformation(input_repr_size, graphspec)
             self.parameterized.append(self.node_state_updater)
+
+        if len(self.word_node_mapping) > 0:
+            self.direct_reference_updater = tfms.DirectReferenceUpdateTransformation(input_repr_size, graphspec)
+            self.parameterized.append(self.direct_reference_updater)
 
         if intermediate_propagate != 0:
             self.intermediate_propagator = tfms.PropagationTransformation(propagate_repr_size, graphspec, T.tanh)
@@ -98,6 +104,10 @@ class Model( object ):
             self.query_node_state_updater = tfms.NodeStateUpdateTransformation(input_repr_size, graphspec)
             self.parameterized.append(self.query_node_state_updater)
 
+            if len(self.word_node_mapping) > 0:
+                self.query_direct_reference_updater = tfms.DirectReferenceUpdateTransformation(input_repr_size, graphspec)
+                self.parameterized.append(self.query_direct_reference_updater)
+            
             self.final_propagator = tfms.PropagationTransformation(propagate_repr_size, graphspec, T.tanh)
             self.parameterized.append(self.final_propagator)
 
@@ -148,15 +158,21 @@ class Model( object ):
             info = {}
             # Process each sentence, flattened to (?, sentence_len)
             flat_input_words = input_words.reshape([-1, sentence_len])
-            flat_input_reprs = self.input_transformer.process(flat_input_words) # shape (?, input_repr_size)
+            flat_input_reprs, flat_ref_matrices = self.input_transformer.process(flat_input_words)
+            # flat_input_reprs of shape (?, input_repr_size)
+            # flat_ref_matrices of shape (?, num_node_ids, input_repr_size)
             input_reprs = flat_input_reprs.reshape([n_batch, n_sentences, self.input_repr_size])
+            ref_matrices = flat_ref_matrices.reshape([n_batch, n_sentences, self.num_node_ids, self.input_repr_size])
 
-            query_repr = self.input_transformer.process(query_words)
+            query_repr, query_ref_matrix = self.input_transformer.process(query_words)
 
-            def _iter_fn(input_repr, gstate, correct_num_new_nodes=None, correct_new_strengths=None, correct_new_node_ids=None, correct_edges=None):
+            def _iter_fn(input_repr, ref_matrix, gstate, correct_num_new_nodes=None, correct_new_strengths=None, correct_new_node_ids=None, correct_edges=None):
                 # If necessary, update node state
                 if self.nodes_mutable:
                     gstate = self.node_state_updater.process(gstate, input_repr)
+
+                if len(self.word_node_mapping) > 0:
+                    gstate = self.direct_reference_updater.process(gstate, ref_matrix)
 
                 # If necessary, propagate node state
                 if self.intermediate_propagate != 0:
@@ -210,19 +226,27 @@ class Model( object ):
                     return gstate
 
             # Scan over each sentence
-            def _scan_fn(input_repr, *stuff): # (input_repr, [*correct_graph_stuff?], *flat_graph_state, pad_graph_size)
+            def _scan_fn(input_repr, *stuff): # (input_repr, [ref_matrix?], [*correct_graph_stuff?], *flat_graph_state, pad_graph_size)
                 stuff = list(stuff)
+
+                if len(self.word_node_mapping) > 0:
+                    ref_matrix = stuff[0]
+                    stuff = stuff[1:]
+                else:
+                    ref_matrix = None
+
                 if with_correct_graph:
                     c_num_new_nodes, c_new_strengths, c_new_node_ids, c_edges = stuff[:4]
                     stuff = stuff[4:]
+
                 flat_graph_state = stuff[:-1]
                 pad_graph_size = stuff[-1]
                 gstate = GraphState.unflatten_from_const_size(flat_graph_state)
 
                 if with_correct_graph:
-                    gstate, node_loss, edge_loss = _iter_fn(input_repr, gstate, c_num_new_nodes, c_new_strengths, c_new_node_ids, c_edges)
+                    gstate, node_loss, edge_loss = _iter_fn(input_repr, ref_matrix, gstate, c_num_new_nodes, c_new_strengths, c_new_node_ids, c_edges)
                 else:
-                    gstate = _iter_fn(input_repr, gstate)
+                    gstate = _iter_fn(input_repr, ref_matrix, gstate)
 
                 retvals = gstate.flatten_to_const_size(pad_graph_size)
                 if with_correct_graph:
@@ -244,6 +268,8 @@ class Model( object ):
             outputs_info = initial_gstate.flatten_to_const_size(pad_graph_size)
             prepped_input = input_reprs.dimshuffle([1,0,2])
             sequences = [prepped_input]
+            if len(self.word_node_mapping) > 0:
+                sequences.append(ref_matrices.dimshuffle([1,0,2,3]))
             if with_correct_graph:
                 sequences.append(graph_num_new_nodes.swapaxes(0,1))
                 sequences.append(graph_new_node_strengths.swapaxes(0,1))
@@ -278,6 +304,8 @@ class Model( object ):
                 if self.wipe_node_state:
                     final_gstate = final_gstate.with_updates(node_states=T.zeros_like(final_gstate.node_states))
                 query_gstate = self.query_node_state_updater.process(final_gstate, query_repr)
+                if len(self.word_node_mapping) > 0:
+                    query_gstate = self.query_direct_reference_updater.process(query_gstate, query_ref_matrix)
                 propagated_gstate = self.final_propagator.process_multiple(query_gstate, self.final_propagate)
                 aggregated_repr = self.aggregator.process(propagated_gstate) # shape (n_batch, output_repr_size)
                 

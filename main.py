@@ -8,7 +8,7 @@ import babi_train
 import babi_graph_parse
 from util import *
 
-def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, propagate_intermediate, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, check_mode):
+def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, check_mode):
     output_format = model.ModelOutputFormat[output_format_str]
 
     prepped_stories = babi_graph_parse.prepare_stories(babi_graph_parse.get_stories(task_fn), dynamic_nodes)
@@ -19,6 +19,16 @@ def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, 
         validation_buckets = None
     else:
         validation_buckets = babi_graph_parse.prepare_stories(babi_graph_parse.get_stories(validation))[-1]
+
+    if direct_reference:
+        word_node_mapping = {wi:ni for wi,word in enumerate(wordlist)
+                                    for ni,node in enumerate(graph_node_list)
+                                    if word == node}
+        print(wordlist)
+        print(graph_node_list)
+        print(word_node_mapping)
+    else:
+        word_node_mapping = {}
 
     m = model.Model(num_input_words=len(wordlist),
                     num_output_words=len(eff_anslist),
@@ -32,6 +42,7 @@ def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, 
                     new_nodes_per_iter=new_nodes_per_iter,
                     output_format=output_format,
                     final_propagate=5,
+                    word_node_mapping=word_node_mapping,
                     dynamic_nodes=dynamic_nodes,
                     nodes_mutable=mutable_nodes,
                     wipe_node_state=wipe_node_state,
@@ -86,6 +97,7 @@ parser.add_argument('output_format_str', choices=[x.name for x in model.ModelOut
 parser.add_argument('state_width', type=int, help="Width of node state")
 parser.add_argument('--mutable-nodes', action="store_true", help="Make nodes mutable")
 parser.add_argument('--wipe-node-state', action="store_true", help="Wipe node state before the query")
+parser.add_argument('--direct-reference', action="store_true", help="Use direct reference for input, based on node names")
 parser.add_argument('--dynamic-nodes', action="store_true", help="Create nodes after each sentence. (Otherwise, create unique nodes at the beginning)")
 parser.add_argument('--propagate-intermediate', action="store_true", help="Run a propagation step after each sentence")
 parser.add_argument('--outputdir', default="output", help="Directory to save output in")
