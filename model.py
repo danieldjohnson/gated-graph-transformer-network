@@ -219,7 +219,12 @@ class Model( object ):
                 if with_correct_graph:
                     cropped_correct_edges = correct_edges[:,:gstate.n_nodes,:gstate.n_nodes,:]
                     edge_lls = cropped_correct_edges * T.log(gstate.edge_strengths + util.EPSILON) + (1-cropped_correct_edges) * T.log(1-gstate.edge_strengths + util.EPSILON)
-                    edge_loss = -T.sum(edge_lls, axis=[1,2,3])
+                    # edge_lls currently penalizes for edges connected to nodes that do not exist
+                    # we do not want it to do this, so we mask it with node strengths
+                    mask_src = util.shape_padaxes(gstate.node_strengths,[2,3])
+                    mask_dest = util.shape_padaxes(gstate.node_strengths,[1,3])
+                    masked_edge_lls = edge_lls * mask_src * mask_dest
+                    edge_loss = -T.sum(masked_edge_lls, axis=[1,2,3])
                     gstate = gstate.with_updates(edge_strengths=cropped_correct_edges)
                     return gstate, node_loss, edge_loss
                 else:

@@ -86,6 +86,11 @@ def reduce_log_sum(tensor, axis=None, guaranteed_finite=False):
     logsum = maxval + T.log(reduced_sum)
     return logsum
 
+def shape_padaxes(tensor, axes):
+    for axis in axes:
+        tensor = T.shape_padaxis(tensor, axis)
+    return tensor
+
 idx_map = collections.defaultdict(lambda:0)
 def get_unique_name(cls):
     name = "{}{}".format(cls.__name__, idx_map[cls])
