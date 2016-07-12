@@ -24,9 +24,6 @@ def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, 
         word_node_mapping = {wi:ni for wi,word in enumerate(wordlist)
                                     for ni,node in enumerate(graph_node_list)
                                     if word == node}
-        print(wordlist)
-        print(graph_node_list)
-        print(word_node_mapping)
     else:
         word_node_mapping = {}
 
