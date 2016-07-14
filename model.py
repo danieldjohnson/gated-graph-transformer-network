@@ -340,10 +340,14 @@ class Model( object ):
                 full_loss = full_loss + query_loss
             full_loss = T.opt.Assert("Full loss was nan!")(full_loss, T.invert(T.isnan(full_loss)))
 
-            full_flat_gstates = [T.concatenate([a,T.shape_padleft(b),T.shape_padleft(c)],0).swapaxes(0,1)
-                                    for a,b,c in zip(all_flat_gstates,
-                                                     query_gstate.flatten(),
-                                                     propagated_gstate.flatten())]
+            if self.train_with_query:
+                full_flat_gstates = [T.concatenate([a,T.shape_padleft(b),T.shape_padleft(c)],0).swapaxes(0,1)
+                                        for a,b,c in zip(all_flat_gstates[:-1],
+                                                         query_gstate.flatten(),
+                                                         propagated_gstate.flatten())]
+            else:
+                full_flat_gstates = [a.swapaxes(0,1) for a in all_flat_gstates[:-1]]
+                max_seq_len = T.iscalar()
             return full_loss, final_output, full_flat_gstates, max_seq_len, info
 
         train_loss, _, full_flat_gstates, _, train_info = _build(self.train_with_graph)
