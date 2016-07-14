@@ -24,7 +24,8 @@ def parse_stories(lines):
     data = []
     story = []
     for line in lines:
-        line = line.strip()
+        if line[-1] == "\n":
+            line = line[:-1]
         nid, line = line.split(' ', 1)
         nid = int(nid)
         if nid == 1:
