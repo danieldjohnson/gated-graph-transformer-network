@@ -156,10 +156,10 @@ function _graph_display(states,colormap,el,batch){
                     data: cur_e_strengths[i][j],
                 };
 
-                if(cur_e_strengths[i][j]>0.1){
+                if(eff_str>0.1){
                     tmp_edges.push(c_edge);
                 }
-                if(cur_e_strengths[i][j]>0.03){
+                if(eff_str>0.03){
                     tmp_display_edges.push(c_edge);
                 }
             }
