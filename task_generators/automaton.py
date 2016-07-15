@@ -73,7 +73,7 @@ def generate(num_seqs, init_len, run_len, rule_idx):
             })
             story.append("simulate={}".format(graph_str))
         story.append("\t")
-        result.extend(["{} {}".format(i,s) for i,s in enumerate(story)])
+        result.extend(["{} {}".format(i+1,s) for i,s in enumerate(story)])
     return "\n".join(result)+"\n"
 
 
