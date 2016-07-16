@@ -52,3 +52,9 @@ class OutputSequenceTransformation( object ):
         final = flat_final.reshape([seq_len, n_batch, self._num_words]).dimshuffle([1,0,2])
 
         return final
+
+    def snap_to_best(self, answer):
+        """
+        Convert output of process to the "best" answer, i.e. the answer with highest probability.
+        """
+        return categorical_best(answer)

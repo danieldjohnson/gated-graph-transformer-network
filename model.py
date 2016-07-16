@@ -154,7 +154,7 @@ class Model( object ):
         # graph_new_edges: shape(n_batch, n_sentence, pad_graph_size, pad_graph_size, num_edge_types)
         graph_new_edges = T.TensorType('floatX', (False,)*5)()
 
-        def _build(with_correct_graph):
+        def _build(with_correct_graph, snap_to_best):
             info = {}
             # Process each sentence, flattened to (?, sentence_len)
             flat_input_words = input_words.reshape([-1, sentence_len])
@@ -210,6 +210,10 @@ class Model( object ):
                             node_loss = -scaled_ll
                         # now substitute in the correct nodes
                         gstate = gstate.with_additional_nodes(correct_new_strengths, correct_new_node_ids)
+                    elif snap_to_best:
+                        snapped_strengths = util.independent_best(new_strengths)
+                        snapped_ids = util.categorical_best(new_ids)
+                        gstate = gstate.with_additional_nodes(snapped_strengths, snapped_ids)
                     else:
                         gstate = gstate.with_additional_nodes(new_strengths, new_ids)
 
@@ -227,6 +231,10 @@ class Model( object ):
                     edge_loss = -T.sum(masked_edge_lls, axis=[1,2,3])
                     gstate = gstate.with_updates(edge_strengths=cropped_correct_edges)
                     return gstate, node_loss, edge_loss
+                elif snap_to_best:
+                    snapped_edges = util.independent_best(gstate.edge_strengths)
+                    gstate = gstate.with_updates(edge_strengths=snapped_edges)
+                    return gstate
                 else:
                     return gstate
 
@@ -320,6 +328,9 @@ class Model( object ):
                 else:
                     final_output = self.output_processor.process(aggregated_repr)
 
+                if snap_to_best:
+                    final_output = self.output_processor.snap_to_best(final_output)
+
                 if self.output_format == ModelOutputFormat.subset:
                     elemwise_loss = T.nnet.binary_crossentropy(final_output, correct_output)
                     query_loss = T.sum(elemwise_loss)
@@ -350,7 +361,7 @@ class Model( object ):
                 max_seq_len = T.iscalar()
             return full_loss, final_output, full_flat_gstates, max_seq_len, info
 
-        train_loss, _, full_flat_gstates, _, train_info = _build(self.train_with_graph)
+        train_loss, _, full_flat_gstates, _, train_info = _build(self.train_with_graph, False)
         adam_updates = Adam(train_loss, self.params)
 
         self.info_keys = list(train_info.keys())
@@ -381,8 +392,15 @@ class Model( object ):
                                         on_unused_input='ignore',
                                         mode=mode)
 
-        test_loss, final_output, full_flat_gstates, max_seq_len, _ = _build(False)
-        self.test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
+        test_loss, final_output, full_flat_gstates, max_seq_len, _ = _build(False, False)
+        self.fuzzy_test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
+                                        [final_output] + full_flat_gstates,
+                                        allow_input_downcast=True,
+                                        on_unused_input='ignore',
+                                        mode=mode)
+
+        test_loss, final_output, full_flat_gstates, max_seq_len, _ = _build(False, True)
+        self.snap_test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
                                         [final_output] + full_flat_gstates,
                                         allow_input_downcast=True,
                                         on_unused_input='ignore',

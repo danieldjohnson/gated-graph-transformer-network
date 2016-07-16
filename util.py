@@ -1,6 +1,7 @@
 import theano
 import theano.tensor as T
 import numpy as np
+import pickle
 
 import itertools
 import collections
@@ -58,6 +59,24 @@ def pad_to(tensor, shape):
         current = T.concatenate([current, padding], i)
     return current
 
+def save_params(params, file):
+    """
+    Save params into a pickle file
+    """
+    values = [param.get_value() for param in params]
+    pickle.dump(values, file)
+
+def load_params(params, file):
+    """
+    Load params from a pickle file
+    """
+    values = pickle.load(file)
+    for param,value in zip(params, values):
+        try:
+            param.set_value(value)
+        except:
+            param.set_value(value.get_value())
+
 def set_params(params, saved_params):
     """
     Copies saved_params into params (both must be theano shared variables)
@@ -97,4 +116,23 @@ def get_unique_name(cls):
     idx_map[cls] += 1
     return name
 
+def independent_best(tensor):
+    """
+    tensor should be a tensor of probabilities
+    Return a new tensor of maximum likelihood, i.e. 1 in each position if p>0.5,
+    else 0
+    """
+    return T.cast(T.ge(tensor, 0.5), 'floatX')
+
+def categorical_best(tensor):
+    """
+    tensor should be a tensor of shape (..., categories)
+    Return a new tensor of the same shape but one-hot at position of best category
+    """
+    flat_tensor = tensor.reshape([-1, tensor.shape[-1]])
+    argmax_posns = T.argmax(flat_tensor, 1)
+    flat_snapped = T.zeros_like(flat_tensor)
+    flat_snapped = T.set_subtensor(flat_snapped[T.arange(flat_tensor.shape[0]), argmax_posns], 1.0)
+    snapped = flat_snapped.reshape(tensor.shape)
+    return snapped
 

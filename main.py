@@ -9,7 +9,7 @@ import babi_graph_parse
 from babi_graph_parse import MetadataList, PreppedStory
 from util import *
 
-def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, check_mode):
+def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy):
     output_format = model.ModelOutputFormat[output_format_str]
 
     with open(os.path.join(task_dir,'metadata.p'),'rb') as f:
@@ -72,7 +72,7 @@ def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes,
     if resume is not None:
         start_idx, paramfile = resume
         start_idx = int(start_idx)
-        set_params(m.params, pickle.load(open(paramfile, "rb")))
+        load_params(m.params, open(paramfile, "rb") )
     else:
         start_idx = 0
 
@@ -88,14 +88,18 @@ def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes,
         print("Starting to visualize...")
         babi_train.visualize(m, source, wordlist, eff_anslist, output_format, outputdir)
         print("Wrote visualization files to {}.".format(outputdir))
+    elif evaluate_accuracy:
+        print("Evaluating accuracy...")
+        acc = babi_train.test_accuracy(m, bucketed, len(eff_anslist), output_format, batch_size)
+        print("Obtained accuracy of {}".format(acc))
     elif debugtest:
         print("Starting debug test...")
         babi_train.visualize(m, bucketed, wordlist, eff_anslist, output_format, outputdir, debugmode=True)
         print("Wrote visualization files to {}.".format(outputdir))
     else:
         print("Starting to train...")
-        babi_train.train(m, bucketed, len(eff_anslist), output_format, num_updates, outputdir, start_idx, batch_size, validation_buckets)
-        pickle.dump( m.params, open( os.path.join(outputdir, "final_params.p"), "wb" ) )
+        babi_train.train(m, bucketed, len(eff_anslist), output_format, num_updates, outputdir, start_idx, batch_size, validation_buckets, stop_at_accuracy)
+        save_params(m.params, open( os.path.join(outputdir, "final_params.p"), "wb" ) )
 
 parser = argparse.ArgumentParser(description='Train a graph memory network model.', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('task_dir', help="Parsed directory for the task to load")
@@ -116,6 +120,8 @@ parser.add_argument('--check-nan', dest="check_mode", action="store_const", cons
 parser.add_argument('--check-debug', dest="check_mode", action="store_const", const="debug", help="Debug mode. Slows execution")
 parser.add_argument('--visualize', nargs="?", const=True, default=False, type=lambda s:[int(x) for x in s.split(',')], help="Visualise current state instead of training. Optional parameter to fix ")
 parser.add_argument('--debugtest', action="store_true", help="Debug the training state")
+parser.add_argument('--evaluate-accuracy', action="store_true", help="Evaluate accuracy of model")
+parser.add_argument('--stop-at-accuracy', type=float, default=None, help="Stop training once it reaches this accuracy on validation set")
 resume_group = parser.add_mutually_exclusive_group()
 resume_group.add_argument('--resume', nargs=2, metavar=('TIMESTEP', 'PARAMFILE'), default=None, help='Where to restore from: timestep, and file to load')
 resume_group.add_argument('--resume-auto', action='store_true', help='Automatically restore from a previous run using output directory')

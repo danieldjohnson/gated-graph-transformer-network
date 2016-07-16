@@ -8,6 +8,7 @@ import gzip
 from babi_graph_parse import MetadataList, PreppedStory
 from graceful_interrupt import GracefulInterruptHandler
 from pprint import pformat
+import util
 
 BATCH_SIZE = 10
 
@@ -78,12 +79,30 @@ def visualize(m, story_buckets, wordlist, answerlist, output_format, outputdir, 
         print("FALKHVKADHL")
     else:
         args = part_sampled_batch[:2] + ((seq_len,) if output_format == model.ModelOutputFormat.sequence else ())
-        fn = m.test_fn
+        fn = m.fuzzy_test_fn
     results = fn(*args)
     for i,result in enumerate(results):
         np.save(os.path.join(outputdir,'result_{}.npy'.format(i)), result)
 
-def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None):
+def test_accuracy(m, story_buckets, num_answer_words, format_spec, batch_size):
+    correct = 0
+    out_of = 0
+    for bucket in story_buckets:
+        for start_idx in range(0, len(bucket), batch_size):
+            stories = bucket[start_idx:start_idx+batch_size]
+            batch = assemble_batch(stories, num_answer_words, format_spec)
+            answers = batch[2]
+            args = batch[:2] + ((answers.shape[1],) if format_spec == model.ModelOutputFormat.sequence else ())
+            results = m.snap_test_fn(*args)
+            close = np.isclose(results[0], answers)
+            batch_close = np.all(close, (1,2))
+            batch_correct = np.sum(batch_close).tolist()
+            batch_out_of = len(stories)
+            correct +=  batch_correct
+            out_of += batch_out_of
+    return correct/out_of
+
+def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None, stop_at_accuracy=None):
     with GracefulInterruptHandler() as interrupt_h:
         for i in range(start+1,start+num_updates+1):
             cur_bucket = random.choice(story_buckets)
@@ -112,6 +131,13 @@ def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, 
                     print("validation at {}: {}\n{}".format(i,valid_loss,pformat(valid_info)))
                     with open(os.path.join(outputdir,'valid.csv'),'a') as f:
                         f.write("{}, {}, ".format(i,valid_loss) + ", ".join(str(v) for k,v in sorted(valid_info.items())) + "\n")
-                pickle.dump(m.params, open(os.path.join(outputdir, 'params{}.p'.format(i)), 'wb'))
+                    valid_accuracy = test_accuracy(m, validation_buckets, len_answers, output_format, batch_size)
+                    print("Best-choice accuracy at {}: {}".format(i,valid_accuracy))
+                    with open(os.path.join(outputdir,'valid_acc.csv'),'a') as f:
+                        f.write("{}, {}\n".format(i,valid_accuracy))
+                    if stop_at_accuracy is not None and valid_accuracy > stop_at_accuracy:
+                        print("Accuracy reached threshold! Stopping training")
+                        break
+                util.save_params(m.params, open(os.path.join(outputdir, 'params{}.p'.format(i)), 'wb'))
             if interrupt_h.interrupted:
                 break

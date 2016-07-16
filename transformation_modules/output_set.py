@@ -33,3 +33,9 @@ class OutputSetTransformation( object ):
         """
         transformed = self._transform_stack.process(input_vector)
         return T.shape_padaxis(transformed,1)
+
+    def snap_to_best(self, answer):
+        """
+        Convert output of process to the "best" answer, i.e. the answer with highest probability.
+        """
+        return independent_best(answer)
