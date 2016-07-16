@@ -19,6 +19,7 @@ def encode_turing_machine_rules(rules, starting_state=None, story=None):
     the_edges = [(cstate, read, write, nstate, direc)
                     for (cstate, stuff) in enumerate(rules)
                     for (read, (write, nstate, direc)) in enumerate(stuff)]
+    print(the_edges)
     random.shuffle(the_edges)
     for cstate, read, write, nstate, direc in the_edges:
         if nstate == len(rules):

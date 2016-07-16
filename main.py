@@ -6,19 +6,25 @@ import shutil
 import model
 import babi_train
 import babi_graph_parse
+from babi_graph_parse import MetadataList, PreppedStory
 from util import *
 
-def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, check_mode):
+def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, check_mode):
     output_format = model.ModelOutputFormat[output_format_str]
 
-    prepped_stories = babi_graph_parse.prepare_stories(babi_graph_parse.get_stories(task_fn), dynamic_nodes)
-    sentence_length, new_nodes_per_iter, buckets, wordlist, anslist, graph_node_list, graph_edge_list, bucketed = prepped_stories
+    with open(os.path.join(task_dir,'metadata.p'),'rb') as f:
+        metadata = pickle.load(f)
+    with open(os.path.join(task_dir,'file_list.p'),'rb') as f:
+        bucketed = pickle.load(f)
+
+    sentence_length, new_nodes_per_iter, buckets, wordlist, anslist, graph_node_list, graph_edge_list = metadata
     eff_anslist = babi_train.get_effective_answer_words(anslist, output_format)
 
     if validation is None:
         validation_buckets = None
     else:
-        validation_buckets = babi_graph_parse.prepare_stories(babi_graph_parse.get_stories(validation))[-1]
+        with open(os.path.join(validation,'file_list.p'),'rb') as f:
+            validation_buckets = pickle.load(f)
 
     if direct_reference:
         word_node_mapping = {wi:ni for wi,word in enumerate(wordlist)
@@ -92,7 +98,7 @@ def main(task_fn, output_format_str, state_width, dynamic_nodes, mutable_nodes, 
         pickle.dump( m.params, open( os.path.join(outputdir, "final_params.p"), "wb" ) )
 
 parser = argparse.ArgumentParser(description='Train a graph memory network model.', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-parser.add_argument('task_fn', help="Filename of the task to load")
+parser.add_argument('task_dir', help="Parsed directory for the task to load")
 parser.add_argument('output_format_str', choices=[x.name for x in model.ModelOutputFormat], help="Output format for the task")
 parser.add_argument('state_width', type=int, help="Width of node state")
 parser.add_argument('--mutable-nodes', action="store_true", help="Make nodes mutable")
@@ -105,7 +111,7 @@ parser.add_argument('--no-query', dest='train_with_query', action="store_false",
 parser.add_argument('--outputdir', default="output", help="Directory to save output in")
 parser.add_argument('--num-updates', default="10000", type=int, help="How many iterations to train")
 parser.add_argument('--batch-size', default="10", type=int, help="Batch size to use")
-parser.add_argument('--validation', metavar="VALIDATION_FILE", default=None, help="Filename of validation tasks")
+parser.add_argument('--validation', metavar="VALIDATION_DIR", default=None, help="Parsed directory of validation tasks")
 parser.add_argument('--check-nan', dest="check_mode", action="store_const", const="nan", help="Check for NaN. Slows execution")
 parser.add_argument('--check-debug', dest="check_mode", action="store_const", const="debug", help="Debug mode. Slows execution")
 parser.add_argument('--visualize', nargs="?", const=True, default=False, type=lambda s:[int(x) for x in s.split(',')], help="Visualise current state instead of training. Optional parameter to fix ")

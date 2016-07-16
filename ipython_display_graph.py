@@ -115,8 +115,8 @@ function _graph_display(states,colormap,el,batch){
         };
     }
     var dir_edge_template = [
-        [0,4],[0.6,4],[0.6,8],[0.75,4],[1,4],
-        [1,2],[0.75,2],[0.6,-2],[0.6,2],[0,2],
+        [0,4],[0.6,4],[0.6,12],[0.75,4],[1,4],
+        [1,2],[0.75,2],[0.6,-6],[0.6,2],[0,2],
     ];
     
     function update_state(time){
@@ -202,6 +202,9 @@ function _graph_display(states,colormap,el,batch){
             .attr('r','9')
             .attr('opacity',function(d,i){return d.strength});
 
+        node.on("mouseover",do_focus)
+        link_fwd.on("mouseover",do_focus)
+
         console.log("Updated!");
     }
     update_state(params.timestep);
@@ -247,8 +250,6 @@ function _graph_display(states,colormap,el,batch){
         console.log("Focusing on ", d)
         update_focus(d.data);
     }
-    node.on("mouseover",do_focus)
-    link_fwd.on("mouseover",do_focus)
     
     var gui = new dat.GUI({ autoPlace: false });
     el.insertBefore(gui.domElement, el.firstChild);

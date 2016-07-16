@@ -6,6 +6,10 @@ import numpy as np
 import scipy
 import json
 import itertools
+import pickle
+import gc
+import gzip
+import argparse
 
 def tokenize(sent):
     '''Return the tokens of a sentence including punctuation.
@@ -17,9 +21,6 @@ def tokenize(sent):
 def parse_stories(lines):
     '''
     Parse stories provided in the bAbi tasks format, with knowledge graph.
-
-    Returns a list of stories of the form:
-        ([(sentence, graph)], [(index, question, answer)])
     '''
     data = []
     story = []
@@ -200,9 +201,10 @@ def convert_story(story, wordmap, answer_map, graph_node_map, graph_edge_map, ne
     answer_arr = [answer_map[w] for w in answer]
     return (sentence_arr, graphs, query_arr, answer_arr)
 
+def process_story(s,bucket_len):
+    return convert_story(pad_story(s, bucket_len, sentence_length), wordmap, answer_map, graph_node_map, graph_edge_map, new_nodes_per_iter, dynamic)
+
 def bucket_stories(stories, buckets, wordmap, answer_map, graph_node_map, graph_edge_map, sentence_length, new_nodes_per_iter, dynamic=True):
-    def process_story(s,bucket_len):
-        return convert_story(pad_story(s, bucket_len, sentence_length), wordmap, answer_map, graph_node_map, graph_edge_map, new_nodes_per_iter, dynamic)
     return [ [process_story(story,bmax) for story in stories if bstart < len(story[0]) <= bmax]
                 for bstart, bmax in zip([0]+buckets,buckets)]
 
@@ -225,3 +227,58 @@ def print_batch(story, wordlist, anslist, file=sys.stdout):
             file.write(" ".join([wordlist[word] for word in sent]) + "\n")
         file.write(" ".join(wordlist[word] for word in q) + "\n")
         file.write(" ".join(anslist[word] for word in a.nonzero()[1]) + "\n")
+
+MetadataList = collections.namedtuple("MetadataList", ["sentence_length", "new_nodes_per_iter", "buckets", "wordlist", "anslist", "graph_node_list", "graph_edge_list"])
+PreppedStory = collections.namedtuple("PreppedStory", ["converted", "sentences", "query", "answer"])
+def preprocess_stories(stories, savedir, dynamic=True):
+    sentence_length = max(get_max_sentence_length(stories), get_max_query_length(stories))
+    buckets = get_buckets(stories)
+    wordlist, wordmap = get_wordlist(stories)
+    anslist, ansmap = get_answer_list(stories)
+    new_nodes_per_iter = get_max_nodes_per_iter(stories)
+    graph_node_list, graph_node_map, graph_edge_list, graph_edge_map = get_graph_lists(stories)
+    metadata = MetadataList(sentence_length, new_nodes_per_iter, buckets, wordlist, anslist, graph_node_list, graph_edge_list)
+
+    if not os.path.exists(savedir):
+        os.makedirs(savedir)
+
+    with open(os.path.join(savedir,'metadata.p'),'wb') as f:
+        pickle.dump(metadata, f)
+
+    bucketed_files = [[] for _ in buckets] 
+
+    for i,story in enumerate(stories):
+        bucket_idx, cur_bucket = next(((i,bmax) for (i,(bstart, bmax)) in enumerate(zip([0]+buckets,buckets))
+                                        if bstart < len(story[0]) <= bmax), None)
+        assert cur_bucket is not None, "Couldn't put story of length {} into buckets {}".format(len(story[0]), buckets)
+        bucket_dir = os.path.join(savedir, "bucket_{}".format(cur_bucket))
+        if not os.path.exists(bucket_dir):
+            os.makedirs(bucket_dir)
+        story_fn = os.path.join(bucket_dir, "story_{}.pz".format(i))
+
+        sents_graphs, query, answer = story
+        sents = [s for s,g in sents_graphs]
+        cvtd = convert_story(pad_story(story, cur_bucket, sentence_length), wordmap, ansmap, graph_node_map, graph_edge_map, new_nodes_per_iter, dynamic)
+
+        prepped = PreppedStory(cvtd, sents, query, answer)
+
+        with gzip.open(story_fn, 'wb') as zf:
+            pickle.dump(prepped, zf)
+
+        bucketed_files[bucket_idx].append(story_fn)
+        gc.collect() # we don't want to use too much memory, so try to clean it up
+
+    with open(os.path.join(savedir,'file_list.p'),'wb') as f:
+        pickle.dump(bucketed_files, f)
+
+def main(file, dynamic):
+    stories = get_stories(file)
+    dirname, ext = os.path.splitext(file)
+    preprocess_stories(stories, dirname, dynamic)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Parse a graph file')
+    parser.add_argument("file", help="Graph file to parse")
+    parser.add_argument("--static", dest="dynamic", action="store_false", help="Don't use dynamic nodes")
+    args = vars(parser.parse_args())
+    main(**args)

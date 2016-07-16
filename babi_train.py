@@ -4,6 +4,8 @@ import pickle
 import model
 import random
 import babi_graph_parse
+import gzip
+from babi_graph_parse import MetadataList, PreppedStory
 from graceful_interrupt import GracefulInterruptHandler
 from pprint import pformat
 
@@ -44,7 +46,12 @@ def sample_batch(matching_stories, batch_size, num_answer_words, format_spec):
     chosen_stories = [random.choice(matching_stories) for _ in range(batch_size)]
     return assemble_batch(chosen_stories, num_answer_words, format_spec)
 
-def assemble_batch(stories, num_answer_words, format_spec):
+def assemble_batch(story_fns, num_answer_words, format_spec):
+    stories = []
+    for sfn in story_fns:
+        with gzip.open(sfn,'rb') as f:
+            cvtd_story, _, _, _ = pickle.load(f)
+        stories.append(cvtd_story)
     sents, graphs, queries, answers = zip(*stories)
     cvtd_sents = np.array(sents, np.int32)
     cvtd_queries = np.array(queries, np.int32)
