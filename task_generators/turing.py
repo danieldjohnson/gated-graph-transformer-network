@@ -5,7 +5,7 @@ import sys
 import generator_tools
 
 def make_turing_machine_rules(n_states, n_symbols):
-    the_rules = [   [   (random.randrange(n_symbols), random.randrange(n_states + 1), random.choice('LNR'))
+    the_rules = [   [   (random.randrange(n_symbols), random.randrange(n_states), random.choice('LNR'))
                         for symbol in range(n_symbols)]
                     for state in range(n_states)]
     return the_rules
@@ -19,11 +19,8 @@ def encode_turing_machine_rules(rules, starting_state=None, story=None):
     the_edges = [(cstate, read, write, nstate, direc)
                     for (cstate, stuff) in enumerate(rules)
                     for (read, (write, nstate, direc)) in enumerate(stuff)]
-    print(the_edges)
     random.shuffle(the_edges)
     for cstate, read, write, nstate, direc in the_edges:
-        if nstate == len(rules):
-            nstate = "HALT" # last state is halt state
         source = graph.make_unique('state_{}'.format(cstate))
         dest = graph.make_unique('state_{}'.format(nstate))
         edge_type = "rule_{}_{}_{}".format(read,write,direc)
@@ -57,36 +54,33 @@ def encode_turing_machine_process(rules, starting_state, iptlist, process_len, h
     cstate = starting_state
     cell_values = iptlist[:]
     for _ in range(process_len):
-        if cstate != "HALT":
-            cell = cells[head_index]
-            read = cell_values[head_index]
-            write, nstate, direc = rules[cstate][read]
-            if nstate == len(rules):
-                nstate = "HALT" # last state is halt state
-            cell.value = graph.make_unique('symbol_{}'.format(write))
-            cstate = nstate
-            if update_state:
-                head.state = graph.make_unique('state_{}'.format(nstate))
+        cell = cells[head_index]
+        read = cell_values[head_index]
+        write, nstate, direc = rules[cstate][read]
+        cell.value = graph.make_unique('symbol_{}'.format(write))
+        cstate = nstate
+        if update_state:
+            head.state = graph.make_unique('state_{}'.format(nstate))
 
-            if direc == "L":
-                if head_index == 0:
-                    newcell = graph.make('cell')
-                    cells.insert(0, newcell)
-                    cells[1].left = newcell
-                    newcell.value = graph.make_unique('symbol_{}'.format(0))
-                    cell_values.insert(0, 0)
-                    head_index += 1
-                head_index -= 1
-                head.cell = cells[head_index]
-            elif direc == "R":
-                if head_index == len(cells)-1:
-                    newcell = graph.make('cell')
-                    cells.append(newcell)
-                    newcell.left = cells[-2]
-                    newcell.value = graph.make_unique('symbol_{}'.format(0))
-                    cell_values.append(0)
+        if direc == "L":
+            if head_index == 0:
+                newcell = graph.make('cell')
+                cells.insert(0, newcell)
+                cells[1].left = newcell
+                newcell.value = graph.make_unique('symbol_{}'.format(0))
+                cell_values.insert(0, 0)
                 head_index += 1
-                head.cell = cells[head_index]
+            head_index -= 1
+            head.cell = cells[head_index]
+        elif direc == "R":
+            if head_index == len(cells)-1:
+                newcell = graph.make('cell')
+                cells.append(newcell)
+                newcell.left = cells[-2]
+                newcell.value = graph.make_unique('symbol_{}'.format(0))
+                cell_values.append(0)
+            head_index += 1
+            head.cell = cells[head_index]
         story.add_line('[RUN]')
     story.no_query()
     return story
