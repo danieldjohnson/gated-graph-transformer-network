@@ -106,7 +106,7 @@ parser.add_argument("file", nargs="?", default=sys.stdout, type=argparse.FileTyp
 parser.add_argument("--num-states", type=int, default=4, help="Number of states")
 parser.add_argument("--num-symbols", type=int, default=4, help="Number of symbols")
 parser.add_argument("--input-len", type=int, default=5, help="Length of input")
-parser.add_argument("--run-len", type=int, default=20, help="How many steps to simulate")
+parser.add_argument("--run-len", type=int, default=10, help="How many steps to simulate")
 parser.add_argument("--num-seqs", type=int, default=1, help="Number of sequences to generate")
 
 if __name__ == '__main__':
