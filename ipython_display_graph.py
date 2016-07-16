@@ -20,7 +20,7 @@ def graph_display(states):
     try:
         flat_transf_nid = id_projector.transform(flat_nid)
         flat_transf_estr = edge_projector.transform(flat_estr)
-    except NotFittedError:
+    except:
         flat_transf_nid = id_projector.fit_transform(flat_nid)
         flat_transf_estr = edge_projector.fit_transform(flat_estr)
     minlevel = np.min(flat_transf_nid)
@@ -244,6 +244,7 @@ function _graph_display(states,colormap,el,batch){
     }
     update_focus([0,0.2,0.4,0.6,0.8,1.0]);
     function do_focus(d){
+        console.log("Focusing on ", d)
         update_focus(d.data);
     }
     node.on("mouseover",do_focus)
