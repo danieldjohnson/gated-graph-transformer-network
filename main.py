@@ -26,7 +26,7 @@ def helper_trim(bucketed, desired_total):
     trimmed_bucketed = [b[:amt] for b,amt in zip(bucketed, keep_amts)]
     return trimmed_bucketed
 
-def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, restrict_dataset):
+def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, restrict_dataset, train_save_params):
     output_format = model.ModelOutputFormat[output_format_str]
 
     with open(os.path.join(task_dir,'metadata.p'),'rb') as f:
@@ -117,7 +117,7 @@ def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes,
         print("Wrote visualization files to {}.".format(outputdir))
     else:
         print("Starting to train...")
-        babi_train.train(m, bucketed, len(eff_anslist), output_format, num_updates, outputdir, start_idx, batch_size, validation_buckets, stop_at_accuracy)
+        babi_train.train(m, bucketed, len(eff_anslist), output_format, num_updates, outputdir, start_idx, batch_size, validation_buckets, stop_at_accuracy, train_save_params)
         save_params(m.params, open( os.path.join(outputdir, "final_params.p"), "wb" ) )
 
 parser = argparse.ArgumentParser(description='Train a graph memory network model.', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -135,6 +135,7 @@ parser.add_argument('--outputdir', default="output", help="Directory to save out
 parser.add_argument('--num-updates', default="10000", type=int, help="How many iterations to train")
 parser.add_argument('--batch-size', default="10", type=int, help="Batch size to use")
 parser.add_argument('--restrict-dataset', metavar="NUM_STORIES", type=int, default=None, help="Restrict size of dataset to this")
+parser.add_argument('--final-params-only', action="store_false", dest="train_save_params" help="Don't save parameters while training, only at the end.")
 parser.add_argument('--validation', metavar="VALIDATION_DIR", default=None, help="Parsed directory of validation tasks")
 parser.add_argument('--check-nan', dest="check_mode", action="store_const", const="nan", help="Check for NaN. Slows execution")
 parser.add_argument('--check-debug', dest="check_mode", action="store_const", const="debug", help="Debug mode. Slows execution")

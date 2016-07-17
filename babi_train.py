@@ -102,7 +102,7 @@ def test_accuracy(m, story_buckets, num_answer_words, format_spec, batch_size):
             out_of += batch_out_of
     return correct/out_of
 
-def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None, stop_at_accuracy=None):
+def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None, stop_at_accuracy=None, save_params=True):
     with GracefulInterruptHandler() as interrupt_h:
         for i in range(start+1,start+num_updates+1):
             cur_bucket = random.choice(story_buckets)
@@ -138,6 +138,7 @@ def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, 
                     if stop_at_accuracy is not None and valid_accuracy > stop_at_accuracy:
                         print("Accuracy reached threshold! Stopping training")
                         break
-                util.save_params(m.params, open(os.path.join(outputdir, 'params{}.p'.format(i)), 'wb'))
+                if save_params:
+                    util.save_params(m.params, open(os.path.join(outputdir, 'params{}.p'.format(i)), 'wb'))
             if interrupt_h.interrupted:
                 break
