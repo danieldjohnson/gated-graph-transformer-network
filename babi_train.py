@@ -5,6 +5,7 @@ import model
 import random
 import babi_graph_parse
 import gzip
+from enum import Enum
 from babi_graph_parse import MetadataList, PreppedStory
 from graceful_interrupt import GracefulInterruptHandler
 from pprint import pformat
@@ -112,6 +113,13 @@ def adj_size(m, cur_bucket_size, batch_size, batch_auto_adjust):
     else:
         return batch_size
 
+class TrainExitStatus( Enum ):
+    accuracy_success = 0
+    error = 1 # for consistency with python's default error exit status
+    reached_update_limit = 2
+    interrupted = 3
+    nan_loss = 4
+
 def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None, validation_bucket_sizes=None, stop_at_accuracy=None, save_params=True, batch_auto_adjust=None):
     with GracefulInterruptHandler() as interrupt_h:
         for i in range(start+1,start+num_updates+1):
@@ -121,7 +129,7 @@ def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_update
             loss, info = m.train(*sampled_batch)
             if np.any(np.isnan(loss)):
                 print("Loss at timestep {} was nan! Aborting".format(i))
-                break
+                return TrainExitStatus.nan_loss
             with open(os.path.join(outputdir,'data.csv'),'a') as f:
                 if i == 1:
                     f.seek(0)
@@ -149,8 +157,9 @@ def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_update
                         f.write("{}, {}\n".format(i,valid_accuracy))
                     if stop_at_accuracy is not None and valid_accuracy > stop_at_accuracy:
                         print("Accuracy reached threshold! Stopping training")
-                        break
+                        return TrainExitStatus.accuracy_success
                 if save_params:
                     util.save_params(m.params, open(os.path.join(outputdir, 'params{}.p'.format(i)), 'wb'))
             if interrupt_h.interrupted:
-                break
+                return TrainExitStatus.interrupted
+    return TrainExitStatus.reached_update_limit
