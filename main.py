@@ -2,6 +2,7 @@ import os
 import pickle
 import argparse
 import shutil
+import math
 
 import model
 import babi_train
@@ -9,13 +10,31 @@ import babi_graph_parse
 from babi_graph_parse import MetadataList, PreppedStory
 from util import *
 
-def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy):
+def helper_trim(bucketed, desired_total):
+    """Trim bucketed fairly so that it has desired_total things total"""
+    cur_total = sum(len(b) for b in bucketed)
+    keep_frac = desired_total/cur_total
+    if keep_frac > 1.0:
+        print("WARNING: Asked to trim to {} items, but was already only {} items. Keeping original length.".format(desired_total, cur_total))
+        return bucketed
+    keep_amts = [math.floor(len(b) * keep_frac) for b in bucketed]
+    tmp_total = sum(keep_amts)
+    addtl_to_add = desired_total - tmp_total
+    assert addtl_to_add >= 0
+    keep_amts = [x + (1 if i < addtl_to_add else 0) for i,x in enumerate(keep_amts)]
+    assert sum(keep_amts) == desired_total
+    trimmed_bucketed = [b[:amt] for b,amt in zip(bucketed, keep_amts)]
+    return trimmed_bucketed
+
+def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, restrict_dataset):
     output_format = model.ModelOutputFormat[output_format_str]
 
     with open(os.path.join(task_dir,'metadata.p'),'rb') as f:
         metadata = pickle.load(f)
     with open(os.path.join(task_dir,'file_list.p'),'rb') as f:
         bucketed = pickle.load(f)
+    if restrict_dataset is not None:
+        bucketed = helper_trim(bucketed, restrict_dataset)
 
     sentence_length, new_nodes_per_iter, buckets, wordlist, anslist, graph_node_list, graph_edge_list = metadata
     eff_anslist = babi_train.get_effective_answer_words(anslist, output_format)
@@ -115,6 +134,7 @@ parser.add_argument('--no-query', dest='train_with_query', action="store_false",
 parser.add_argument('--outputdir', default="output", help="Directory to save output in")
 parser.add_argument('--num-updates', default="10000", type=int, help="How many iterations to train")
 parser.add_argument('--batch-size', default="10", type=int, help="Batch size to use")
+parser.add_argument('--restrict-dataset', metavar="NUM_STORIES", type=int, default=None, help="Restrict size of dataset to this")
 parser.add_argument('--validation', metavar="VALIDATION_DIR", default=None, help="Parsed directory of validation tasks")
 parser.add_argument('--check-nan', dest="check_mode", action="store_const", const="nan", help="Check for NaN. Slows execution")
 parser.add_argument('--check-debug', dest="check_mode", action="store_const", const="debug", help="Debug mode. Slows execution")
