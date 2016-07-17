@@ -84,12 +84,13 @@ def visualize(m, story_buckets, wordlist, answerlist, output_format, outputdir, 
     for i,result in enumerate(results):
         np.save(os.path.join(outputdir,'result_{}.npy'.format(i)), result)
 
-def test_accuracy(m, story_buckets, num_answer_words, format_spec, batch_size):
+def test_accuracy(m, story_buckets, bucket_sizes, num_answer_words, format_spec, batch_size, batch_auto_adjust=None):
     correct = 0
     out_of = 0
-    for bucket in story_buckets:
-        for start_idx in range(0, len(bucket), batch_size):
-            stories = bucket[start_idx:start_idx+batch_size]
+    for bucket, bucket_size in zip(story_buckets, bucket_sizes):
+        cur_batch_size = adj_size(m, bucket_size, batch_size, batch_auto_adjust)
+        for start_idx in range(0, len(bucket), cur_batch_size):
+            stories = bucket[start_idx:start_idx+cur_batch_size]
             batch = assemble_batch(stories, num_answer_words, format_spec)
             answers = batch[2]
             args = batch[:2] + ((answers.shape[1],) if format_spec == model.ModelOutputFormat.sequence else ())
@@ -102,11 +103,21 @@ def test_accuracy(m, story_buckets, num_answer_words, format_spec, batch_size):
             out_of += batch_out_of
     return correct/out_of
 
-def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None, stop_at_accuracy=None, save_params=True):
+def adj_size(m, cur_bucket_size, batch_size, batch_auto_adjust):
+    if batch_auto_adjust is not None:
+        # Adjust batch size for this bucket
+        edge_size = (cur_bucket_size**3) * (m.new_nodes_per_iter**2) * m.num_edge_types
+        max_batch_size = batch_auto_adjust//edge_size
+        return min(batch_size, max_batch_size)
+    else:
+        return batch_size
+
+def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None, validation_bucket_sizes=None, stop_at_accuracy=None, save_params=True, batch_auto_adjust=None):
     with GracefulInterruptHandler() as interrupt_h:
         for i in range(start+1,start+num_updates+1):
-            cur_bucket = random.choice(story_buckets)
-            sampled_batch = sample_batch(cur_bucket, batch_size, len_answers, output_format)
+            cur_bucket, cur_bucket_size = random.choice(list(zip(story_buckets, bucket_sizes)))
+            cur_batch_size = adj_size(m, cur_bucket_size, batch_size, batch_auto_adjust)
+            sampled_batch = sample_batch(cur_bucket, cur_batch_size, len_answers, output_format)
             loss, info = m.train(*sampled_batch)
             if np.any(np.isnan(loss)):
                 print("Loss at timestep {} was nan! Aborting".format(i))
@@ -125,13 +136,14 @@ def train(m, story_buckets, len_answers, output_format, num_updates, outputdir, 
                 print("update {}: {}\n{}".format(i,loss,pformat(info)))
             if i % 1000 == 0:
                 if validation_buckets is not None:
-                    cur_bucket = random.choice(validation_buckets)
-                    sampled_batch = sample_batch(cur_bucket, batch_size, len_answers, output_format)
+                    cur_bucket, cur_bucket_size = random.choice(list(zip(validation_buckets, validation_bucket_sizes)))
+                    cur_batch_size = adj_size(m, cur_bucket_size, batch_size, batch_auto_adjust)
+                    sampled_batch = sample_batch(cur_bucket, cur_batch_size, len_answers, output_format)
                     valid_loss, valid_info = m.eval(*sampled_batch)
                     print("validation at {}: {}\n{}".format(i,valid_loss,pformat(valid_info)))
                     with open(os.path.join(outputdir,'valid.csv'),'a') as f:
                         f.write("{}, {}, ".format(i,valid_loss) + ", ".join(str(v) for k,v in sorted(valid_info.items())) + "\n")
-                    valid_accuracy = test_accuracy(m, validation_buckets, len_answers, output_format, batch_size)
+                    valid_accuracy = test_accuracy(m, validation_buckets, validation_bucket_sizes, len_answers, output_format, batch_size, batch_auto_adjust)
                     print("Best-choice accuracy at {}: {}".format(i,valid_accuracy))
                     with open(os.path.join(outputdir,'valid_acc.csv'),'a') as f:
                         f.write("{}, {}\n".format(i,valid_accuracy))

@@ -26,7 +26,7 @@ def helper_trim(bucketed, desired_total):
     trimmed_bucketed = [b[:amt] for b,amt in zip(bucketed, keep_amts)]
     return trimmed_bucketed
 
-def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, restrict_dataset, train_save_params):
+def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, restrict_dataset, train_save_params, batch_adjust):
     output_format = model.ModelOutputFormat[output_format_str]
 
     with open(os.path.join(task_dir,'metadata.p'),'rb') as f:
@@ -36,14 +36,17 @@ def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes,
     if restrict_dataset is not None:
         bucketed = helper_trim(bucketed, restrict_dataset)
 
-    sentence_length, new_nodes_per_iter, buckets, wordlist, anslist, graph_node_list, graph_edge_list = metadata
+    sentence_length, new_nodes_per_iter, bucket_sizes, wordlist, anslist, graph_node_list, graph_edge_list = metadata
     eff_anslist = babi_train.get_effective_answer_words(anslist, output_format)
 
     if validation is None:
         validation_buckets = None
     else:
+        with open(os.path.join(validation,'metadata.p'),'rb') as f:
+            validation_metadata = pickle.load(f)
         with open(os.path.join(validation,'file_list.p'),'rb') as f:
             validation_buckets = pickle.load(f)
+        validation_bucket_sizes = validation_metadata[2]
 
     if direct_reference:
         word_node_mapping = {wi:ni for wi,word in enumerate(wordlist)
@@ -109,7 +112,7 @@ def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes,
         print("Wrote visualization files to {}.".format(outputdir))
     elif evaluate_accuracy:
         print("Evaluating accuracy...")
-        acc = babi_train.test_accuracy(m, bucketed, len(eff_anslist), output_format, batch_size)
+        acc = babi_train.test_accuracy(m, bucketed, bucket_sizes, len(eff_anslist), output_format, batch_size)
         print("Obtained accuracy of {}".format(acc))
     elif debugtest:
         print("Starting debug test...")
@@ -117,7 +120,7 @@ def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes,
         print("Wrote visualization files to {}.".format(outputdir))
     else:
         print("Starting to train...")
-        babi_train.train(m, bucketed, len(eff_anslist), output_format, num_updates, outputdir, start_idx, batch_size, validation_buckets, stop_at_accuracy, train_save_params)
+        babi_train.train(m, bucketed, bucket_sizes, len(eff_anslist), output_format, num_updates, outputdir, start_idx, batch_size, validation_buckets, validation_bucket_sizes, stop_at_accuracy, train_save_params, batch_adjust)
         save_params(m.params, open( os.path.join(outputdir, "final_params.p"), "wb" ) )
 
 parser = argparse.ArgumentParser(description='Train a graph memory network model.', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -135,7 +138,7 @@ parser.add_argument('--outputdir', default="output", help="Directory to save out
 parser.add_argument('--num-updates', default="10000", type=int, help="How many iterations to train")
 parser.add_argument('--batch-size', default="10", type=int, help="Batch size to use")
 parser.add_argument('--restrict-dataset', metavar="NUM_STORIES", type=int, default=None, help="Restrict size of dataset to this")
-parser.add_argument('--final-params-only', action="store_false", dest="train_save_params" help="Don't save parameters while training, only at the end.")
+parser.add_argument('--final-params-only', action="store_false", dest="train_save_params", help="Don't save parameters while training, only at the end.")
 parser.add_argument('--validation', metavar="VALIDATION_DIR", default=None, help="Parsed directory of validation tasks")
 parser.add_argument('--check-nan', dest="check_mode", action="store_const", const="nan", help="Check for NaN. Slows execution")
 parser.add_argument('--check-debug', dest="check_mode", action="store_const", const="debug", help="Debug mode. Slows execution")
@@ -143,6 +146,7 @@ parser.add_argument('--visualize', nargs="?", const=True, default=False, type=la
 parser.add_argument('--debugtest', action="store_true", help="Debug the training state")
 parser.add_argument('--evaluate-accuracy', action="store_true", help="Evaluate accuracy of model")
 parser.add_argument('--stop-at-accuracy', type=float, default=None, help="Stop training once it reaches this accuracy on validation set")
+parser.add_argument('--batch-adjust', type=int, default=None, help="If set, ensure that size of edge matrix does not exceed this")
 resume_group = parser.add_mutually_exclusive_group()
 resume_group.add_argument('--resume', nargs=2, metavar=('TIMESTEP', 'PARAMFILE'), default=None, help='Where to restore from: timestep, and file to load')
 resume_group.add_argument('--resume-auto', action='store_true', help='Automatically restore from a previous run using output directory')
