@@ -57,6 +57,10 @@ def run(tasks_dir, output_dir, base_params, specs):
             print("FAIL! Reached update limit without attaining desired accuracy.")
             with open(completed_file,'w') as f:
                 f.write("FAIL_UPDATE_LIMIT\n")
+        elif task_status == TrainExitStatus.overfitting:
+            print("FAIL! Detected overfitting.")
+            with open(completed_file,'w') as f:
+                f.write("FAIL_OVERFITTING\n")
         elif task_status == TrainExitStatus.error:
             print("Got an error; skipping for now. See {} for details.".format(stdout_fn))
         elif task_status == TrainExitStatus.nan_loss:

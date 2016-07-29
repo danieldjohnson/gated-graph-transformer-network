@@ -119,8 +119,9 @@ class TrainExitStatus( Enum ):
     reached_update_limit = 2
     interrupted = 3
     nan_loss = 4
+    overfitting = 5
 
-def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None, validation_bucket_sizes=None, stop_at_accuracy=None, save_params=True, batch_auto_adjust=None):
+def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None, validation_bucket_sizes=None, stop_at_accuracy=None, stop_at_overfitting=None, save_params=True, batch_auto_adjust=None):
     with GracefulInterruptHandler() as interrupt_h:
         for i in range(start+1,start+num_updates+1):
             cur_bucket, cur_bucket_size = random.choice(list(zip(story_buckets, bucket_sizes)))
@@ -158,6 +159,9 @@ def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_update
                     if stop_at_accuracy is not None and valid_accuracy > stop_at_accuracy:
                         print("Accuracy reached threshold! Stopping training")
                         return TrainExitStatus.accuracy_success
+                    if stop_at_overfitting is not None and valid_loss/loss > stop_at_overfitting:
+                        print("Model appears to be overfitting! Stopping training")
+                        return TrainExitStatus.overfitting
                 if save_params:
                     util.save_params(m.params, open(os.path.join(outputdir, 'params{}.p'.format(i)), 'wb'))
             if interrupt_h.interrupted:

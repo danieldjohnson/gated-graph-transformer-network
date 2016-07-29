@@ -9,7 +9,6 @@ def main(tasks_dir, output_dir):
         "--num-updates 10000",
         "--batch-size 100",
         "--final-params-only",
-        "--stop-at-accuracy 0.95",
         "--batch-adjust 28000000"])
 
     intermediate_propagate_tasks = {2,3,5,7,8}
@@ -41,7 +40,12 @@ def main(tasks_dir, output_dir):
 
     specs = [run_harness.TaskSpec(  "task_{}".format(task_i),
                                     str(rsize) + ("-direct" if direct_ref else ""),
-                                    "--restrict-dataset {} {}".format(rsize, ("--direct-reference" if direct_ref else "")))
+                                    "{} --restrict-dataset {} --stop-at-accuracy {} {} {}".format(
+                                        output_type,
+                                        rsize,
+                                        "1.0" if rsize==1000 else "0.95",
+                                        "" if rsize==1000 else "--stop-at-overfitting 5",
+                                        "--direct-reference" if direct_ref else ""))
                 for task_i, output_type in zip(range(1,21),output_types)
                 for rsize in restrict_sizes
                 for direct_ref in (True, False)]
