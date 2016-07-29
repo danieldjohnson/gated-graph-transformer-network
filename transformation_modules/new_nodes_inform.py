@@ -7,25 +7,31 @@ from layer import *
 from graph_state import GraphState, GraphStateSpec
 from base_gru import BaseGRULayer
 from .aggregate_representation import AggregateRepresentationTransformation
+from .aggregate_representation_softmax import AggregateRepresentationTransformationSoftmax
 
 class NewNodesInformTransformation( object ):
     """
     Transforms a graph state by adding nodes, conditioned on an input vector
     """
-    def __init__(self, input_width, inform_width, proposal_width, graph_spec):
+    def __init__(self, input_width, inform_width, proposal_width, graph_spec, use_old_aggregate=False):
         """
         Params:
             input_width: Integer giving size of input
             inform_width: Size of internal aggregate
             proposal_width: Size of internal proposal
             graph_spec: Instance of GraphStateSpec giving graph spec
+            use_old_aggregate: Use the old aggregation mode
         """
         self._input_width = input_width
         self._graph_spec = graph_spec
         self._proposal_width = proposal_width
         self._inform_width = inform_width
 
-        self._inform_aggregate = AggregateRepresentationTransformation(inform_width, graph_spec)
+        aggregate_type = AggregateRepresentationTransformationSoftmax \
+                                                if use_old_aggregate \
+                                                else AggregateRepresentationTransformation
+
+        self._inform_aggregate = aggregate_type(inform_width, graph_spec)
         self._proposer_gru = BaseGRULayer(input_width+inform_width, proposal_width, name="newnodes_proposer")
         self._proposer_stack = LayerStack(proposal_width, 1+graph_spec.num_node_ids, [proposal_width], bias_shift=3.0, name="newnodes_proposer_post")
 

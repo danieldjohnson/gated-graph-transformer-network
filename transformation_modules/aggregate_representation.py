@@ -22,7 +22,7 @@ class AggregateRepresentationTransformation( object ):
 
     def process(self, gstate):
         """
-        Convert the graph state to a representation vector, using softmax attention to scale representations
+        Convert the graph state to a representation vector, using sigmoid attention to scale representations
 
         Params:
             gstate: A GraphState giving the current state
@@ -37,11 +37,10 @@ class AggregateRepresentationTransformation( object ):
         activations = flat_activations.reshape([gstate.n_batch, gstate.n_nodes, self._representation_width+1])
 
         activation_strengths = activations[:,:,0]
-        existence_penalty = T.log(gstate.node_strengths + EPSILON) # TODO: consider removing epsilon here
-        selector = T.shape_padright(T.nnet.softmax(activation_strengths + existence_penalty))
+        selector = T.shape_padright(T.nnet.sigmoid(activation_strengths) * gstate.node_strengths)
         representations = T.tanh(activations[:,:,1:])
 
-        result = T.sum(selector * representations, 1)
+        result = T.tanh(T.sum(selector * representations, 1))
         return result
 
 

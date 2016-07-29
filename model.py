@@ -24,7 +24,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, word_node_mapping={},  dynamic_nodes=True, nodes_mutable=True, wipe_node_state=True, best_node_match_only=True, intermediate_propagate=0, train_with_graph=True, train_with_query=True, setup=True, check_mode=None):
+    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, word_node_mapping={},  dynamic_nodes=True, nodes_mutable=True, wipe_node_state=True, best_node_match_only=True, intermediate_propagate=0, use_old_aggregate=False, train_with_graph=True, train_with_query=True, setup=True, check_mode=None):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -43,6 +43,7 @@ class Model( object ):
             best_node_match_only: If the network should only train on the ordering with the
                 best match
             intermediate_propagate: How many steps to propagate info for each input sentence
+            use_old_aggregate: Should it use the old (sofmax) activation
             dynamic_nodes: Whether to dynamically create nodes as sentences are read. If false,
                 a node with each id will be created at task start
             nodes_mutable: Whether nodes should update their state based on input
@@ -67,12 +68,17 @@ class Model( object ):
         self.word_node_mapping = word_node_mapping
         self.best_node_match_only = best_node_match_only
         self.intermediate_propagate = intermediate_propagate
+        self.use_old_aggregate = use_old_aggregate
         self.dynamic_nodes = dynamic_nodes
         self.nodes_mutable = nodes_mutable
         self.wipe_node_state = wipe_node_state
         self.train_with_graph = train_with_graph
         self.train_with_query = train_with_query
         self.check_mode = check_mode
+
+        AggregateRepresentationTransformation = tfms.AggregateRepresentationTransformationSoftmax \
+                                                if use_old_aggregate \
+                                                else tfms.AggregateRepresentationTransformation
 
         graphspec = GraphStateSpec(num_node_ids, node_state_size, num_edge_types)
 
@@ -94,7 +100,7 @@ class Model( object ):
             self.parameterized.append(self.intermediate_propagator)
 
         if self.dynamic_nodes:
-            self.new_node_adder = tfms.NewNodesInformTransformation(input_repr_size, self.propose_repr_size, self.propose_repr_size, graphspec)
+            self.new_node_adder = tfms.NewNodesInformTransformation(input_repr_size, self.propose_repr_size, self.propose_repr_size, graphspec, use_old_aggregate)
             self.parameterized.append(self.new_node_adder)
 
         self.edge_state_updater = tfms.EdgeStateUpdateTransformation(input_repr_size, graphspec)
@@ -111,7 +117,7 @@ class Model( object ):
             self.final_propagator = tfms.PropagationTransformation(propagate_repr_size, graphspec, T.tanh)
             self.parameterized.append(self.final_propagator)
 
-            self.aggregator = tfms.AggregateRepresentationTransformation(output_repr_size, graphspec)
+            self.aggregator = AggregateRepresentationTransformation(output_repr_size, graphspec)
             self.parameterized.append(self.aggregator)
 
             assert output_format in ModelOutputFormat, "Invalid output format {}".format(output_format)
