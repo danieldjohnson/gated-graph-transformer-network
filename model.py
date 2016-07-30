@@ -355,7 +355,6 @@ class Model( object ):
                 full_loss = full_loss + avg_graph_loss
             if self.train_with_query:
                 full_loss = full_loss + query_loss
-            full_loss = T.opt.Assert("Full loss was nan!")(full_loss, T.invert(T.isnan(full_loss)))
 
             if self.train_with_query:
                 full_flat_gstates = [T.concatenate([a,T.shape_padleft(b),T.shape_padleft(c)],0).swapaxes(0,1)
@@ -372,13 +371,15 @@ class Model( object ):
 
         self.info_keys = list(train_info.keys())
 
+        optimizer = theano.compile.predefined_optimizers['fast_run' if self.check_mode == 'debug' else theano.config.optimizer]
+        optimizer = optimizer.excluding("scanOp_pushout_output","remove_constants_and_unused_inputs_scan")
         if self.check_mode == 'nan':
-            mode = NanGuardMode(nan_is_error=True, inf_is_error=True, big_is_error=True)
+            mode = NanGuardMode(optimizer=optimizer, nan_is_error=True, inf_is_error=True, big_is_error=True)
         elif self.check_mode == 'debug':
-            mode = DebugMode()
+            mode = DebugMode(optimizer=optimizer, check_isfinite=False, check_py_code=False, stability_patience=1)
+            theano.tensor.TensorType.filter_checks_isfinite = False
         else:
-            mode = theano.Mode()
-        mode = mode.excluding("scanOp_pushout_output")
+            mode = theano.Mode(optimizer=optimizer)
         self.train_fn = theano.function([input_words, query_words, correct_output, graph_num_new_nodes, graph_new_node_strengths, graph_new_node_ids, graph_new_edges],
                                         [train_loss]+list(train_info.values()),
                                         updates=adam_updates,
@@ -413,7 +414,13 @@ class Model( object ):
                                         mode=mode)
 
     def train(self, *args, **kwargs):
-        stuff = self.train_fn(*args, **kwargs)
+        try:
+            stuff = self.train_fn(*args, **kwargs)
+        except theano.compile.debugmode.DebugModeError as e:
+            if hasattr(e, 'str_diagnostic'):
+                print(e.str_diagnostic())
+            import pdb
+            pdb.post_mortem()
         loss = stuff[0]
         info = dict(zip(self.info_keys, stuff[1:]))
         return loss, info

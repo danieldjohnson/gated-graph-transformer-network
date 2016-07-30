@@ -3,6 +3,7 @@ import pickle
 import argparse
 import shutil
 import math
+import sys
 
 import model
 import babi_train
@@ -41,6 +42,7 @@ def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes,
 
     if validation is None:
         validation_buckets = None
+        validation_bucket_sizes = None
     else:
         with open(os.path.join(validation,'metadata.p'),'rb') as f:
             validation_metadata = pickle.load(f)

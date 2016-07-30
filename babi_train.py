@@ -156,7 +156,7 @@ def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_update
                     print("Best-choice accuracy at {}: {}".format(i,valid_accuracy))
                     with open(os.path.join(outputdir,'valid_acc.csv'),'a') as f:
                         f.write("{}, {}\n".format(i,valid_accuracy))
-                    if stop_at_accuracy is not None and valid_accuracy > stop_at_accuracy:
+                    if stop_at_accuracy is not None and valid_accuracy >= stop_at_accuracy:
                         print("Accuracy reached threshold! Stopping training")
                         return TrainExitStatus.accuracy_success
                     if stop_at_overfitting is not None and valid_loss/loss > stop_at_overfitting:
