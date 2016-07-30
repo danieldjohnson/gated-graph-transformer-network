@@ -44,11 +44,11 @@ def main(tasks_dir, output_dir):
                                         output_type,
                                         rsize,
                                         "1.0" if rsize==1000 else "0.95",
-                                        "" if rsize==1000 else "--stop-at-overfitting 5",
-                                        "--direct-reference" if direct_ref else ""))
+                                        "" if False else "--stop-at-overfitting 5",
+                                        extra_params))
+                for extra_params in ("--direct-reference","","--no-graph")
                 for task_i, output_type in zip(range(1,21),output_types)
-                for rsize in restrict_sizes
-                for direct_ref in (True, False)]
+                for rsize in restrict_sizes]
 
     run_harness.run(tasks_dir, output_dir, base_params, specs)
 
