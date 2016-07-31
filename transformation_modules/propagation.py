@@ -11,7 +11,7 @@ class PropagationTransformation( object ):
     """
     Transforms a graph state by propagating info across the graph
     """
-    def __init__(self, transfer_size, graph_spec, transfer_activation=(lambda x:x)):
+    def __init__(self, transfer_size, graph_spec, transfer_activation=(lambda x:x), dropout_keep=1):
         """
         Params:
             transfer_size: Integer, how much to transfer
@@ -23,21 +23,22 @@ class PropagationTransformation( object ):
         self._graph_spec = graph_spec
         self._process_input_size = graph_spec.num_node_ids + graph_spec.node_state_size
 
-        self._transfer_stack = LayerStack(self._process_input_size, 2 * graph_spec.num_edge_types * transfer_size, activation=self._transfer_activation, name="propagation_transfer")
-        self._propagation_gru = BaseGRULayer(graph_spec.num_node_ids + self._transfer_size, graph_spec.node_state_size, name="propagation")
+        self._transfer_stack = LayerStack(self._process_input_size, 2 * graph_spec.num_edge_types * transfer_size, activation=self._transfer_activation, name="propagation_transfer", dropout_keep=dropout_keep, dropout_input=False, dropout_output=True)
+        self._propagation_gru = BaseGRULayer(graph_spec.num_node_ids + self._transfer_size, graph_spec.node_state_size, name="propagation", dropout_keep=dropout_keep, dropout_input=False, dropout_output=True)
 
     @property
     def params(self):
         return self._propagation_gru.params +  self._transfer_stack.params
 
-    @property
-    def num_dropout_masks(self):
-        return self._propagation_gru.num_dropout_masks
+    def dropout_masks(self, srng):
+        return self._transfer_stack.dropout_masks(srng) + self._propagation_gru.dropout_masks(srng)
 
-    def get_dropout_masks(self, srng, keep_frac):
-        return self._propagation_gru.get_dropout_masks(srng, keep_frac)
+    def split_dropout_masks(self, dropout_masks):
+        transfer_used, dropout_masks = self._transfer_stack.split_dropout_masks(dropout_masks)
+        gru_used, dropout_masks = self._propagation_gru.split_dropout_masks(dropout_masks)
+        return (transfer_used+gru_used), dropout_masks
 
-    def process(self, gstate, dropout_masks=None):
+    def process(self, gstate, dropout_masks):
         """
         Process a graph state.
           1. Data is transfered from each node to each other node along both forward and backward edges.
@@ -51,8 +52,8 @@ class PropagationTransformation( object ):
 
         node_obs = T.concatenate([gstate.node_ids, gstate.node_states],2)
         flat_node_obs = node_obs.reshape([-1, self._process_input_size])
-        transformed = self._transfer_stack.process(flat_node_obs)\
-                            .reshape([gstate.n_batch, gstate.n_nodes, 2*self._graph_spec.num_edge_types, self._transfer_size])
+        transformed, dropout_masks = self._transfer_stack.process(flat_node_obs,dropout_masks)
+        transformed = transformed.reshape([gstate.n_batch, gstate.n_nodes, 2*self._graph_spec.num_edge_types, self._transfer_size])
         scaled_transformed = transformed * T.shape_padright(T.shape_padright(gstate.node_strengths))
         # scaled_transformed is of shape (n_batch, n_nodes, 2*num_edge_types, transfer_size)
         # We want to multiply  through by edge strengths, which are of shape
@@ -71,14 +72,14 @@ class PropagationTransformation( object ):
         # we flatten to apply GRU
         flat_input = full_input.reshape([-1, self._graph_spec.num_node_ids + self._transfer_size])
         flat_state = gstate.node_states.reshape([-1, self._graph_spec.node_state_size])
-        new_flat_state = self._propagation_gru.step(flat_input, flat_state, dropout_masks)
+        new_flat_state, dropout_masks = self._propagation_gru.step(flat_input, flat_state, dropout_masks)
 
         new_node_states = new_flat_state.reshape(gstate.node_states.shape)
 
         new_gstate = gstate.with_updates(node_states=new_node_states)
-        return new_gstate
+        return new_gstate, dropout_masks
 
-    def process_multiple(self, gstate, iterations, dropout_masks=None):
+    def process_multiple(self, gstate, iterations, dropout_masks):
         """
         Run multiple propagagtion steps.
 
@@ -89,11 +90,12 @@ class PropagationTransformation( object ):
 
         def _scan_step(cur_node_states, node_strengths, node_ids, edge_strengths, *dmasks):
             curstate = GraphState(node_strengths, node_ids, cur_node_states, edge_strengths)
-            return self.process(curstate, dmasks if dropout_masks is not None else None).node_states
+            return self.process(curstate, dmasks).node_states
 
         outputs_info = [gstate.node_states]
-        all_node_states, _ = theano.scan(_scan_step, n_steps=iterations, non_sequences=[gstate.node_strengths, gstate.node_ids, gstate.edge_strengths] + (dropout_masks if dropout_masks is not None else []), outputs_info=outputs_info)
+        used_dropout_masks, dropout_masks = self.split_dropout_masks(dropout_masks)
+        all_node_states, _ = theano.scan(_scan_step, n_steps=iterations, non_sequences=[gstate.node_strengths, gstate.node_ids, gstate.edge_strengths] + used_dropout_masks, outputs_info=outputs_info)
 
         final_gstate = gstate.with_updates(node_states=all_node_states[-1,:,:,:])
-        return final_gstate
+        return final_gstate, dropout_masks
 

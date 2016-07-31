@@ -27,7 +27,7 @@ def helper_trim(bucketed, desired_total):
     trimmed_bucketed = [b[:amt] for b,amt in zip(bucketed, keep_amts)]
     return trimmed_bucketed
 
-def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, resume, resume_auto, visualize, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status):
+def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, dropout_keep, resume, resume_auto, visualize, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status):
     output_format = model.ModelOutputFormat[output_format_str]
 
     with open(os.path.join(task_dir,'metadata.p'),'rb') as f:
@@ -74,6 +74,7 @@ def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes,
                     nodes_mutable=mutable_nodes,
                     wipe_node_state=wipe_node_state,
                     intermediate_propagate=(5 if propagate_intermediate else 0),
+                    dropout_keep=dropout_keep,
                     use_old_aggregate=old_aggregate,
                     best_node_match_only=True,
                     train_with_graph=train_with_graph,
@@ -143,6 +144,7 @@ parser.add_argument('--no-query', dest='train_with_query', action="store_false",
 parser.add_argument('--outputdir', default="output", help="Directory to save output in")
 parser.add_argument('--num-updates', default="10000", type=int, help="How many iterations to train")
 parser.add_argument('--batch-size', default="10", type=int, help="Batch size to use")
+parser.add_argument('--dropout-keep', default=1, type=float, help="Use dropout, with this keep chance")
 parser.add_argument('--restrict-dataset', metavar="NUM_STORIES", type=int, default=None, help="Restrict size of dataset to this")
 parser.add_argument('--final-params-only', action="store_false", dest="train_save_params", help="Don't save parameters while training, only at the end.")
 parser.add_argument('--validation', metavar="VALIDATION_DIR", default=None, help="Parsed directory of validation tasks")

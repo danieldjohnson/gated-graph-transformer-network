@@ -5,13 +5,12 @@ import numpy as np
 from util import *
 from layer import *
 from graph_state import GraphState, GraphStateSpec
-from strength_weighted_gru import StrengthWeightedGRULayer
 
 class EdgeStateUpdateTransformation( object ):
     """
     Transforms a graph state by updating edge states, conditioned on an input vector and nodes
     """
-    def __init__(self, input_width, graph_spec):
+    def __init__(self, input_width, graph_spec, dropout_keep=1):
         """
         Params:
             input_width: Integer giving size of input
@@ -21,20 +20,16 @@ class EdgeStateUpdateTransformation( object ):
         self._graph_spec = graph_spec
         self._process_input_size = input_width + 2*(graph_spec.num_node_ids + graph_spec.node_state_size)
 
-        self._update_stack = LayerStack(self._process_input_size, 2*graph_spec.num_edge_types, [self._process_input_size], activation=T.nnet.sigmoid, bias_shift=-3.0, name="edge_update")
+        self._update_stack = LayerStack(self._process_input_size, 2*graph_spec.num_edge_types, [self._process_input_size], activation=T.nnet.sigmoid, bias_shift=-3.0, name="edge_update", dropout_keep=dropout_keep, dropout_input=False)
         
     @property
     def params(self):
         return self._update_stack.params
 
-    @property
-    def num_dropout_masks(self):
-        return 0
+    def dropout_masks(self, srng):
+        return self._update_stack.dropout_masks(srng)
 
-    def get_dropout_masks(self, srng, keep_frac):
-        return []
-
-    def process(self, gstate, input_vector, dropout_masks=None):
+    def process(self, gstate, input_vector, dropout_masks):
         """
         Process an input vector and update the state accordingly. Each node runs a GRU step
         with previous state from the node state and input from the vector.
@@ -53,7 +48,7 @@ class EdgeStateUpdateTransformation( object ):
 
         # we flatten to process updates
         flat_input = full_input.reshape([-1, self._process_input_size])
-        flat_result = self._update_stack.process(flat_input)
+        flat_result, dropout_masks = self._update_stack.process(flat_input, dropout_masks)
         result = flat_result.reshape([gstate.n_batch, gstate.n_nodes, gstate.n_nodes, self._graph_spec.num_edge_types, 2])
         should_set = result[:,:,:,:,0]
         should_clear = result[:,:,:,:,1]
@@ -61,5 +56,5 @@ class EdgeStateUpdateTransformation( object ):
         new_strengths = gstate.edge_strengths*(1-should_clear) + (1-gstate.edge_strengths)*should_set
 
         new_gstate = gstate.with_updates(edge_strengths=new_strengths)
-        return new_gstate
+        return new_gstate, dropout_masks
 

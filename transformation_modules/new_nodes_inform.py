@@ -13,7 +13,7 @@ class NewNodesInformTransformation( object ):
     """
     Transforms a graph state by adding nodes, conditioned on an input vector
     """
-    def __init__(self, input_width, inform_width, proposal_width, graph_spec, use_old_aggregate=False):
+    def __init__(self, input_width, inform_width, proposal_width, graph_spec, dropout_keep=1, use_old_aggregate=False):
         """
         Params:
             input_width: Integer giving size of input
@@ -31,22 +31,18 @@ class NewNodesInformTransformation( object ):
                                                 if use_old_aggregate \
                                                 else AggregateRepresentationTransformation
 
-        self._inform_aggregate = aggregate_type(inform_width, graph_spec)
-        self._proposer_gru = BaseGRULayer(input_width+inform_width, proposal_width, name="newnodes_proposer")
-        self._proposer_stack = LayerStack(proposal_width, 1+graph_spec.num_node_ids, [proposal_width], bias_shift=3.0, name="newnodes_proposer_post")
+        self._inform_aggregate = aggregate_type(inform_width, graph_spec, dropout_keep, dropout_output=True)
+        self._proposer_gru = BaseGRULayer(input_width+inform_width, proposal_width, name="newnodes_proposer", dropout_keep=dropout_keep, dropout_input=False, dropout_output=True)
+        self._proposer_stack = LayerStack(proposal_width, 1+graph_spec.num_node_ids, [proposal_width], bias_shift=3.0, name="newnodes_proposer_post", dropout_keep=dropout_keep, dropout_input=False)
 
     @property
     def params(self):
         return self._proposer_gru.params + self._proposer_stack.params + self._inform_aggregate.params
 
-    @property
-    def num_dropout_masks(self):
-        return self._proposer_gru.num_dropout_masks
+    def dropout_masks(self, srng):
+        return self._inform_aggregate.dropout_masks(srng) + self._proposer_gru.dropout_masks(srng) + self._proposer_stack.dropout_masks(srng)
 
-    def get_dropout_masks(self, srng, keep_frac):
-        return self._proposer_gru.get_dropout_masks(srng, keep_frac)
-
-    def get_candidates(self, gstate, input_vector, max_candidates, dropout_masks=None):
+    def get_candidates(self, gstate, input_vector, max_candidates, dropout_masks):
         """
         Get the current candidate new nodes. This is accomplished as follows:
           1. Using the aggregate transformation, we gather information from nodes (who should have performed
@@ -69,32 +65,33 @@ class NewNodesInformTransformation( object ):
         n_batch = gstate.n_batch
         n_nodes = gstate.n_nodes
 
-        aggregated_repr = self._inform_aggregate.process(gstate)
+        aggregated_repr, dropout_masks = self._inform_aggregate.process(gstate, dropout_masks)
         # aggregated_repr is of shape (n_batch, inform_width)
         
         full_input = T.concatenate([input_vector, aggregated_repr],1)
 
         outputs_info = [self._proposer_gru.initial_state(n_batch)]
-        proposer_step = lambda st,ipt,*dm: self._proposer_gru.step(ipt,st,dm if dropout_masks is not None else None)
-        raw_proposal_acts, _ = theano.scan(proposer_step, n_steps=max_candidates, non_sequences=[full_input]+(dropout_masks if dropout_masks is not None else []), outputs_info=outputs_info)
+        gru_dropout_masks, dropout_masks = self._proposer_gru.split_dropout_masks(dropout_masks)
+        proposer_step = lambda st,ipt,*dm: self._proposer_gru.step(ipt,st,dm)
+        raw_proposal_acts, _ = theano.scan(proposer_step, n_steps=max_candidates, non_sequences=[full_input]+gru_dropout_masks, outputs_info=outputs_info)
 
         # raw_proposal_acts is of shape (candidate, n_batch, blah)
         flat_raw_acts = raw_proposal_acts.reshape([-1, self._proposal_width])
-        flat_processed_acts = self._proposer_stack.process(flat_raw_acts)
+        flat_processed_acts, dropout_masks = self._proposer_stack.process(flat_raw_acts, dropout_masks)
         candidate_strengths = T.nnet.sigmoid(flat_processed_acts[:,0]).reshape([max_candidates, n_batch])
         candidate_ids = T.nnet.softmax(flat_processed_acts[:,1:]).reshape([max_candidates, n_batch, self._graph_spec.num_node_ids])
 
         new_strengths = candidate_strengths.dimshuffle([1,0])
         new_ids = candidate_ids.dimshuffle([1,0,2])
-        return new_strengths, new_ids
+        return new_strengths, new_ids, dropout_masks
 
-    def process(self, gstate, input_vector, max_candidates, dropout_masks=None):
+    def process(self, gstate, input_vector, max_candidates, dropout_masks):
         """
         Process an input vector and update the state accordingly.
         """
-        new_strengths, new_ids = self.get_candidates(gstate, input_vector, max_candidates, dropout_masks)
+        new_strengths, new_ids, dropout_masks = self.get_candidates(gstate, input_vector, max_candidates, dropout_masks)
         new_gstate = gstate.with_additional_nodes(new_strengths, new_ids)
-        return new_gstate
+        return new_gstate, dropout_masks
 
 
     

@@ -10,7 +10,7 @@ class DirectReferenceUpdateTransformation( object ):
     """
     Transforms a graph state by updating note states, conditioned on a direct reference accumulation
     """
-    def __init__(self, input_width, graph_spec):
+    def __init__(self, input_width, graph_spec, dropout_keep=1):
         """
         Params:
             input_width: Integer giving size of input
@@ -19,20 +19,16 @@ class DirectReferenceUpdateTransformation( object ):
         self._input_width = input_width
         self._graph_spec = graph_spec
 
-        self._update_gru = BaseGRULayer(input_width + graph_spec.num_node_ids, graph_spec.node_state_size, name="nodestateupdate")
+        self._update_gru = BaseGRULayer(input_width + graph_spec.num_node_ids, graph_spec.node_state_size, name="nodestateupdate", dropout_keep=dropout_keep)
 
     @property
     def params(self):
         return self._update_gru.params
 
-    @property
-    def num_dropout_masks(self):
-        return self._update_gru.num_dropout_masks
+    def dropout_masks(self, srng):
+        return self._update_gru.dropout_masks(srng)
 
-    def get_dropout_masks(self, srng, keep_frac):
-        return self._update_gru.get_dropout_masks(srng, keep_frac)
-
-    def process(self, gstate, ref_matrix, dropout_masks=None):
+    def process(self, gstate, ref_matrix, dropout_masks):
         """
         Process a direct ref matrix and update the state accordingly. Each node runs a GRU step
         with previous state from the node state and input from the matrix.
@@ -54,12 +50,12 @@ class DirectReferenceUpdateTransformation( object ):
         # we flatten to apply GRU
         flat_input = full_input.reshape([-1, self._input_width + self._graph_spec.num_node_ids])
         flat_state = gstate.node_states.reshape([-1, self._graph_spec.node_state_size])
-        new_flat_state = self._update_gru.step(flat_input, flat_state, dropout_masks)
+        new_flat_state, dropout_masks = self._update_gru.step(flat_input, flat_state, dropout_masks)
 
         new_node_states = new_flat_state.reshape(gstate.node_states.shape)
 
         new_gstate = gstate.with_updates(node_states=new_node_states)
-        return new_gstate
+        return new_gstate, dropout_masks
 
 
 

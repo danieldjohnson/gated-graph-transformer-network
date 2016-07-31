@@ -136,3 +136,8 @@ def categorical_best(tensor):
     snapped = flat_snapped.reshape(tensor.shape)
     return snapped
 
+def make_dropout_mask(shape, keep_frac, srng):
+    return T.shape_padleft(T.cast(srng.binomial(shape, p=keep_frac), 'float32') / keep_frac)
+
+def apply_dropout(ipt, dropout):
+    return ipt * dropout

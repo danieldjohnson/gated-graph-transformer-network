@@ -9,7 +9,7 @@ class BaseGRULayer( object ):
     Implements a GRU layer
     """
 
-    def __init__(self, input_width, output_width, activation_shift=0.0, name=None):
+    def __init__(self, input_width, output_width, activation_shift=0.0, name=None, dropout_keep=1, dropout_input=False, dropout_output=True):
         """
         Params:
             input_width: Width of input
@@ -29,6 +29,10 @@ class BaseGRULayer( object ):
 
         self._activation_W = theano.shared(init_params([input_width + output_width, output_width]), prefix+"activation_W")
         self._activation_b = theano.shared(init_params([output_width], shift=activation_shift), prefix+"activation_b")
+
+        self._dropout_keep = dropout_keep
+        self._dropout_input = dropout_input
+        self._dropout_output = dropout_output
 
     @property
     def input_width(self):
@@ -50,18 +54,24 @@ class BaseGRULayer( object ):
         """
         return T.zeros([batch_size, self.output_width])
 
-    @property
-    def num_dropout_masks(self):
-        return 2
+    def dropout_masks(self, srng):
+        if self.dropout_keep == 1:
+            return []
+        else:
+            masks = []
+            if self._dropout_input:
+                masks.append(make_dropout_mask((self._input_width,), self._dropout_keep, srng))
+            if self._dropout_output:
+                masks.append(make_dropout_mask((self._output_width,), self._dropout_keep, srng))
+            return masks
 
-    def get_dropout_masks(self, srng, keep_frac):
-        """
-        Get dropout masks for the GRU.
-        """
-        return [T.shape_padleft(T.cast(srng.binomial((self._input_width,), p=keep_frac), 'float32') / keep_frac),
-                T.shape_padleft(T.cast(srng.binomial((self._output_width,), p=keep_frac), 'float32') / keep_frac)]
+    def split_dropout_masks(self, dropout_masks):
+        if dropout_masks is None:
+            return [], None
+        idx = self._dropout_input + self._dropout_output
+        return dropout_masks[:idx], dropout_masks[idx:]
 
-    def step(self, ipt, state, dropout_masks=None):
+    def step(self, ipt, state, dropout_masks):
         """
         Perform a single step of the network
 
@@ -72,10 +82,10 @@ class BaseGRULayer( object ):
 
         Returns: The next output state
         """
-        if dropout_masks is not None:
-            ipt_masks, state_masks = dropout_masks
-            ipt = ipt*ipt_masks
-            state = state*state_masks
+        if self.dropout_keep != 1 and self._dropout_input and dropout_masks not in ([], None):
+                ipt_masks = dropout_masks[0]
+                ipt = apply_dropout(ipt, ipt_masks)
+                dropout_masks = dropout_masks[1:]
 
         cat_ipt_state = T.concatenate([ipt, state], 1)
         reset = do_layer( T.nnet.sigmoid, cat_ipt_state,
@@ -86,4 +96,10 @@ class BaseGRULayer( object ):
                             self._activation_W, self._activation_b )
 
         newstate = update * state + (1-update) * candidate_act
-        return newstate
+
+        if self.dropout_keep != 1 and self._dropout_output and dropout_masks not in ([], None):
+                newstate_masks = dropout_masks[0]
+                newstate = apply_dropout(newstate, newstate_masks)
+                dropout_masks = dropout_masks[1:]
+
+        return newstate, dropout_masks

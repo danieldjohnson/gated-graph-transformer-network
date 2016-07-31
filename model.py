@@ -24,7 +24,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, word_node_mapping={},  dynamic_nodes=True, nodes_mutable=True, wipe_node_state=True, best_node_match_only=True, intermediate_propagate=0, use_old_aggregate=False, train_with_graph=True, train_with_query=True, setup=True, check_mode=None):
+    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, word_node_mapping={},  dynamic_nodes=True, nodes_mutable=True, wipe_node_state=True, best_node_match_only=True, intermediate_propagate=0, dropout_keep=1, use_old_aggregate=False, train_with_graph=True, train_with_query=True, setup=True, check_mode=None):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -43,6 +43,7 @@ class Model( object ):
             best_node_match_only: If the network should only train on the ordering with the
                 best match
             intermediate_propagate: How many steps to propagate info for each input sentence
+            dropout_keep: If <1, perform dropout with this chance of keeping a node.
             use_old_aggregate: Should it use the old (sofmax) activation
             dynamic_nodes: Whether to dynamically create nodes as sentences are read. If false,
                 a node with each id will be created at task start
@@ -68,6 +69,7 @@ class Model( object ):
         self.word_node_mapping = word_node_mapping
         self.best_node_match_only = best_node_match_only
         self.intermediate_propagate = intermediate_propagate
+        self.dropout_keep = dropout_keep
         self.use_old_aggregate = use_old_aggregate
         self.dynamic_nodes = dynamic_nodes
         self.nodes_mutable = nodes_mutable
@@ -88,36 +90,36 @@ class Model( object ):
         self.parameterized.append(self.input_transformer)
 
         if nodes_mutable:
-            self.node_state_updater = tfms.NodeStateUpdateTransformation(input_repr_size, graphspec)
+            self.node_state_updater = tfms.NodeStateUpdateTransformation(input_repr_size, graphspec, dropout_keep=dropout_keep)
             self.parameterized.append(self.node_state_updater)
 
         if len(self.word_node_mapping) > 0:
-            self.direct_reference_updater = tfms.DirectReferenceUpdateTransformation(input_repr_size, graphspec)
+            self.direct_reference_updater = tfms.DirectReferenceUpdateTransformation(input_repr_size, graphspec, dropout_keep=dropout_keep)
             self.parameterized.append(self.direct_reference_updater)
 
         if intermediate_propagate != 0:
-            self.intermediate_propagator = tfms.PropagationTransformation(propagate_repr_size, graphspec, T.tanh)
+            self.intermediate_propagator = tfms.PropagationTransformation(propagate_repr_size, graphspec, T.tanh, dropout_keep=dropout_keep)
             self.parameterized.append(self.intermediate_propagator)
 
         if self.dynamic_nodes:
-            self.new_node_adder = tfms.NewNodesInformTransformation(input_repr_size, self.propose_repr_size, self.propose_repr_size, graphspec, use_old_aggregate)
+            self.new_node_adder = tfms.NewNodesInformTransformation(input_repr_size, self.propose_repr_size, self.propose_repr_size, graphspec, use_old_aggregate, dropout_keep=dropout_keep)
             self.parameterized.append(self.new_node_adder)
 
-        self.edge_state_updater = tfms.EdgeStateUpdateTransformation(input_repr_size, graphspec)
+        self.edge_state_updater = tfms.EdgeStateUpdateTransformation(input_repr_size, graphspec, dropout_keep=dropout_keep)
         self.parameterized.append(self.edge_state_updater)
 
         if self.train_with_query:
-            self.query_node_state_updater = tfms.NodeStateUpdateTransformation(input_repr_size, graphspec)
+            self.query_node_state_updater = tfms.NodeStateUpdateTransformation(input_repr_size, graphspec, dropout_keep=dropout_keep)
             self.parameterized.append(self.query_node_state_updater)
 
             if len(self.word_node_mapping) > 0:
-                self.query_direct_reference_updater = tfms.DirectReferenceUpdateTransformation(input_repr_size, graphspec)
+                self.query_direct_reference_updater = tfms.DirectReferenceUpdateTransformation(input_repr_size, graphspec, dropout_keep=dropout_keep)
                 self.parameterized.append(self.query_direct_reference_updater)
             
-            self.final_propagator = tfms.PropagationTransformation(propagate_repr_size, graphspec, T.tanh)
+            self.final_propagator = tfms.PropagationTransformation(propagate_repr_size, graphspec, T.tanh, dropout_keep=dropout_keep)
             self.parameterized.append(self.final_propagator)
 
-            self.aggregator = AggregateRepresentationTransformation(output_repr_size, graphspec)
+            self.aggregator = AggregateRepresentationTransformation(output_repr_size, graphspec, dropout_keep=dropout_keep)
             self.parameterized.append(self.aggregator)
 
             assert output_format in ModelOutputFormat, "Invalid output format {}".format(output_format)
@@ -160,7 +162,7 @@ class Model( object ):
         # graph_new_edges: shape(n_batch, n_sentence, pad_graph_size, pad_graph_size, num_edge_types)
         graph_new_edges = T.TensorType('floatX', (False,)*5)()
 
-        def _build(with_correct_graph, snap_to_best):
+        def _build(with_correct_graph, snap_to_best, using_dropout):
             info = {}
             # Process each sentence, flattened to (?, sentence_len)
             flat_input_words = input_words.reshape([-1, sentence_len])
@@ -172,22 +174,36 @@ class Model( object ):
 
             query_repr, query_ref_matrix = self.input_transformer.process(query_words)
 
-            def _iter_fn(input_repr, ref_matrix, gstate, correct_num_new_nodes=None, correct_new_strengths=None, correct_new_node_ids=None, correct_edges=None):
+            if using_dropout:
+                iter_dropouts = []
+                if self.nodes_mutable:
+                    iter_dropouts.extend(self.node_state_updater.dropout_masks(self.srng))
+                if len(self.word_node_mapping) > 0:
+                    iter_dropouts.extend(self.direct_reference_updater.dropout_masks(self.srng))
+                if self.intermediate_propagate != 0:
+                    iter_dropouts.extend(self.intermediate_propagator.dropout_masks(self.srng))
+                if self.dynamic_nodes:
+                    iter_dropouts.extend(self.new_node_adder.dropout_masks(self.srng))
+                iter_dropouts.extend(self.edge_state_updater.dropout_masks(self.srng))
+            else:
+                iter_dropouts = []
+
+            def _iter_fn(input_repr, ref_matrix, gstate, correct_num_new_nodes=None, correct_new_strengths=None, correct_new_node_ids=None, correct_edges=None, dropout_masks=None):
                 # If necessary, update node state
                 if self.nodes_mutable:
-                    gstate = self.node_state_updater.process(gstate, input_repr)
+                    gstate, dropout_masks = self.node_state_updater.process(gstate, input_repr, dropout_masks)
 
                 if len(self.word_node_mapping) > 0:
-                    gstate = self.direct_reference_updater.process(gstate, ref_matrix)
+                    gstate, dropout_masks = self.direct_reference_updater.process(gstate, ref_matrix, dropout_masks)
 
                 # If necessary, propagate node state
                 if self.intermediate_propagate != 0:
-                    gstate = self.intermediate_propagator.process_multiple(gstate, self.intermediate_propagate)
+                    gstate, dropout_masks = self.intermediate_propagator.process_multiple(gstate, self.intermediate_propagate, dropout_masks)
 
                 node_loss = None
                 # Propose and vote on new nodes
                 if self.dynamic_nodes:
-                    new_strengths, new_ids = self.new_node_adder.get_candidates(gstate, input_repr, self.new_nodes_per_iter)
+                    new_strengths, new_ids, dropout_masks = self.new_node_adder.get_candidates(gstate, input_repr, self.new_nodes_per_iter, dropout_masks)
                     # new_strengths and correct_new_strengths are of shape (n_batch, new_nodes_per_iter)
                     # new_ids and correct_new_node_ids are of shape (n_batch, new_nodes_per_iter, num_node_ids)
                     if with_correct_graph:
@@ -225,7 +241,7 @@ class Model( object ):
 
 
                 # Update edge state
-                gstate = self.edge_state_updater.process(gstate, input_repr)
+                gstate, dropout_masks = self.edge_state_updater.process(gstate, input_repr, dropout_masks)
                 if with_correct_graph:
                     cropped_correct_edges = correct_edges[:,:gstate.n_nodes,:gstate.n_nodes,:]
                     edge_lls = cropped_correct_edges * T.log(gstate.edge_strengths + util.EPSILON) + (1-cropped_correct_edges) * T.log(1-gstate.edge_strengths + util.EPSILON)
@@ -245,7 +261,7 @@ class Model( object ):
                     return gstate
 
             # Scan over each sentence
-            def _scan_fn(input_repr, *stuff): # (input_repr, [ref_matrix?], [*correct_graph_stuff?], *flat_graph_state, pad_graph_size)
+            def _scan_fn(input_repr, *stuff): # (input_repr, [ref_matrix?], [*correct_graph_stuff?], [dropout_masks?], *flat_graph_state, pad_graph_size)
                 stuff = list(stuff)
 
                 if len(self.word_node_mapping) > 0:
@@ -258,14 +274,20 @@ class Model( object ):
                     c_num_new_nodes, c_new_strengths, c_new_node_ids, c_edges = stuff[:4]
                     stuff = stuff[4:]
 
+                if using_dropout:
+                    dropout_masks = stuff[:len(iter_dropouts)]
+                    stuff = stuff[len(iter_dropouts):]
+                else:
+                    dropout_masks = None
+
                 flat_graph_state = stuff[:-1]
                 pad_graph_size = stuff[-1]
                 gstate = GraphState.unflatten_from_const_size(flat_graph_state)
 
                 if with_correct_graph:
-                    gstate, node_loss, edge_loss = _iter_fn(input_repr, ref_matrix, gstate, c_num_new_nodes, c_new_strengths, c_new_node_ids, c_edges)
+                    gstate, node_loss, edge_loss = _iter_fn(input_repr, ref_matrix, gstate, c_num_new_nodes, c_new_strengths, c_new_node_ids, c_edges, dropout_masks=dropout_masks)
                 else:
-                    gstate = _iter_fn(input_repr, ref_matrix, gstate)
+                    gstate = _iter_fn(input_repr, ref_matrix, gstate, dropout_masks=dropout_masks)
 
                 retvals = gstate.flatten_to_const_size(pad_graph_size)
                 if with_correct_graph:
@@ -298,6 +320,8 @@ class Model( object ):
                 if self.dynamic_nodes:
                     outputs_info.extend([None])
                 outputs_info.extend([None])
+            if using_dropout:
+                sequences.extend(iter_dropouts)
             all_scan_out, _ = theano.scan(_scan_fn, sequences=sequences, outputs_info=outputs_info, non_sequences=[pad_graph_size])
             if with_correct_graph:
                 if self.dynamic_nodes:
@@ -322,11 +346,19 @@ class Model( object ):
             if self.train_with_query:
                 if self.wipe_node_state:
                     final_gstate = final_gstate.with_updates(node_states=T.zeros_like(final_gstate.node_states))
-                query_gstate = self.query_node_state_updater.process(final_gstate, query_repr)
+
+                qnsu_dropout_masks = self.query_node_state_updater.dropout_masks(self.srng)
+                query_gstate, _ = self.query_node_state_updater.process(final_gstate, query_repr, qnsu_dropout_masks)
+
                 if len(self.word_node_mapping) > 0:
-                    query_gstate = self.query_direct_reference_updater.process(query_gstate, query_ref_matrix)
-                propagated_gstate = self.final_propagator.process_multiple(query_gstate, self.final_propagate)
-                aggregated_repr = self.aggregator.process(propagated_gstate) # shape (n_batch, output_repr_size)
+                    qdru_dropout_masks = self.query_direct_reference_updater.dropout_masks(self.srng)
+                    query_gstate, _ = self.query_direct_reference_updater.process(query_gstate, query_ref_matrix, qdru_dropout_masks)
+
+                fp_dropout_masks = self.final_propagator.dropout_masks(self.srng)
+                propagated_gstate, _ = self.final_propagator.process_multiple(query_gstate, self.final_propagate, fp_dropout_masks)
+
+                agg_dropout_masks = self.aggregator.dropout_masks(self.srng)
+                aggregated_repr, _ = self.aggregator.process(propagated_gstate, agg_dropout_masks) # shape (n_batch, output_repr_size)
                 
                 max_seq_len = correct_output.shape[1]
                 if self.output_format == ModelOutputFormat.sequence:
@@ -366,7 +398,7 @@ class Model( object ):
                 max_seq_len = T.iscalar()
             return full_loss, final_output, full_flat_gstates, max_seq_len, info
 
-        train_loss, _, full_flat_gstates, _, train_info = _build(self.train_with_graph, False)
+        train_loss, _, _, _, train_info = _build(self.train_with_graph, False, True)
         adam_updates = Adam(train_loss, self.params)
 
         self.info_keys = list(train_info.keys())
@@ -387,8 +419,9 @@ class Model( object ):
                                         on_unused_input='ignore',
                                         mode=mode)
 
+        eval_loss, _, full_flat_gstates, _, eval_info = _build(self.train_with_graph, False, False)
         self.eval_fn = theano.function( [input_words, query_words, correct_output, graph_num_new_nodes, graph_new_node_strengths, graph_new_node_ids, graph_new_edges],
-                                        [train_loss]+list(train_info.values()),
+                                        [eval_loss]+list(eval_info.values()),
                                         allow_input_downcast=True,
                                         on_unused_input='ignore',
                                         mode=mode)
@@ -399,14 +432,14 @@ class Model( object ):
                                         on_unused_input='ignore',
                                         mode=mode)
 
-        test_loss, final_output, full_flat_gstates, max_seq_len, _ = _build(False, False)
+        test_loss, final_output, full_flat_gstates, max_seq_len, _ = _build(False, False, False)
         self.fuzzy_test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
                                         [final_output] + full_flat_gstates,
                                         allow_input_downcast=True,
                                         on_unused_input='ignore',
                                         mode=mode)
 
-        test_loss, final_output, full_flat_gstates, max_seq_len, _ = _build(False, True)
+        test_loss, final_output, full_flat_gstates, max_seq_len, _ = _build(False, True, False)
         self.snap_test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
                                         [final_output] + full_flat_gstates,
                                         allow_input_downcast=True,
