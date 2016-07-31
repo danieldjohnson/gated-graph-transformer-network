@@ -11,7 +11,7 @@ id_projector = GaussianRandomProjection(n_components=3)
 edge_projector = GaussianRandomProjection(n_components=3)
 
 STATE_WIDTH = 50
-def graph_display(states):
+def graph_display(states, extra_forces=[], edge_strength_adjust=[]):
     clean_states = [x.tolist() for x in states]
     nstr, nid, nstate, estr = states
     flat_nid = nid.reshape([-1,nid.shape[-1]])
@@ -33,9 +33,12 @@ def graph_display(states):
         "node_id": node_colors.reshape(nid.shape[:-1] + (3,)).tolist(),
         "edge_type": edge_colors.reshape(estr.shape[:-1] + (3,)).tolist(),
     }
-    return Javascript("window._graph_display({}, {}, element[0],0);".format(
+    print(json.dumps(edge_strength_adjust))
+    return Javascript("window._graph_display({}, {}, element[0],0,{},{});".format(
             json.dumps(clean_states),
-            json.dumps(colormap)))
+            json.dumps(colormap),
+            json.dumps(extra_forces),
+            json.dumps(edge_strength_adjust)))
 
 JS_SETUP_STRING = """
 require.config({
@@ -46,7 +49,7 @@ require.config({
 });
 
 require(['d3','dat'], function(d3,_ignored){
-function _graph_display(states,colormap,el,batch){
+function _graph_display(states,colormap,el,batch,extra_snap_specs,edge_strength_adjust){
     var node_strengths = states[0];
     var node_ids = states[1];
     var node_states = states[2];
@@ -64,6 +67,26 @@ function _graph_display(states,colormap,el,batch){
                     .force("link", d3.forceLink())
                     .force("gravityX", d3.forceX(250))
                     .force("gravityY", d3.forceY(250));
+
+    if(!extra_snap_specs)
+        extra_snap_specs = [];
+    var extra_forces = [];
+    for(var i=0; i<extra_snap_specs.length; i++){
+        var spec = extra_snap_specs[i];
+        if(spec.axis == "x")
+            var new_force = d3.forceX(spec.value);
+        else if(spec.axis == "y")
+            var new_force = d3.forceY(spec.value);
+        force.force("extra"+i, new_force);
+        extra_forces.push(new_force);
+    }
+
+    if(!edge_strength_adjust){
+        console.log("Using default edge_strength_adjust")
+        edge_strength_adjust = [];
+        for(var i=0; i<edge_strengths[0][0][0][0].length; i++)
+            edge_strength_adjust.push(1);
+    }
     
     var link_fwd = svg.append("g").selectAll("path.fwd");
     var node = svg.append("g").selectAll("circle");
@@ -73,6 +96,7 @@ function _graph_display(states,colormap,el,batch){
     
     var params = {
         linkDistance: 80,
+        linkStrength: 0.1,
         gravity: 0.02,
         charge: 100,
         primarySelection: 'Active Selection',
@@ -134,6 +158,7 @@ function _graph_display(states,colormap,el,batch){
                 state_index: i,
                 strength: n_strength,
                 color: colormap.node_id[batch][time][i],
+                id:cur_n_ids[i],
                 data: [n_strength].concat(cur_n_ids[i],cur_n_states[i].map(function(x){return (x+1.0)/2})),
                 x: (i < data_nodes.length) ? data_nodes[i].x : 200+100*Math.random(),
                 y: (i < data_nodes.length) ? data_nodes[i].y : 200+100*Math.random(),
@@ -144,14 +169,19 @@ function _graph_display(states,colormap,el,batch){
                 if(i==j)
                     continue;
                 var eff_str = Math.min(1,cur_e_strengths[i][j].reduce(function(p,v){return p+v;},0));
+                var eff_str_link = cur_e_strengths[i][j].map(function(v,etype){
+                    return v * edge_strength_adjust[etype];
+                }).reduce(function(p,v){return p+v;},0);
                 eff_str = eff_str * cur_n_strengths[i] * cur_n_strengths[j];
                 var c_edge = {
                     edge_index:i,
                     s:i,
                     d:j,
+                    types: cur_e_strengths[i][j],
                     source:i,
                     target:j,
                     strength: eff_str,
+                    link_force_strength: eff_str_link,
                     color: colormap.edge_type[batch][time][i][j],
                     data: cur_e_strengths[i][j],
                 };
@@ -171,11 +201,11 @@ function _graph_display(states,colormap,el,batch){
         data_nodes = tmp_nodes;
         data_edges = tmp_edges;
         display_edges = tmp_display_edges;
-        
+
         force.nodes(data_nodes);
         force.force("link").links(data_edges)
             .strength(function(link,i){
-                return 0.1*link.strength;
+                return params.linkStrength*link.link_force_strength;
             })
             .distance(params.linkDistance)
         force.force("charge").strength(function(node,i){
@@ -184,6 +214,14 @@ function _graph_display(states,colormap,el,batch){
         force.force("gravityX").strength(params.gravity);
         force.force("gravityY").strength(params.gravity);
         force.alpha(1).restart();
+
+        for(var i=0; i<extra_snap_specs.length; i++){
+            var spec = extra_snap_specs[i];
+            var cur_force = extra_forces[i];
+            cur_force.strength(function(node,ni){
+                return spec.strength * node.id[spec.id];
+            });
+        }
         
         link_fwd=link_fwd.data(display_edges);
         link_fwd.exit().remove();
@@ -258,6 +296,13 @@ function _graph_display(states,colormap,el,batch){
         force.force("link").distance(value);
         force.alpha(1).restart();
     });
+    gui.add(params,"linkStrength").min(0).max(1).onChange(function(value) {
+        force.force("link").strength(function(link,i){
+                return value*link.link_force_strength;
+            })
+        force.alpha(1).restart();
+    });
+
     gui.add(params,"gravity").min(0).max(0.2).onChange(function(value) {
         force.force("gravityX").strength(value);
         force.force("gravityY").strength(value);
