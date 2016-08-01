@@ -27,7 +27,7 @@ def helper_trim(bucketed, desired_total):
     trimmed_bucketed = [b[:amt] for b,amt in zip(bucketed, keep_amts)]
     return trimmed_bucketed
 
-def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, dropout_keep, resume, resume_auto, visualize, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status):
+def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, dropout_keep, resume, resume_auto, visualize, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_loss, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status):
     output_format = model.ModelOutputFormat[output_format_str]
 
     with open(os.path.join(task_dir,'metadata.p'),'rb') as f:
@@ -64,8 +64,8 @@ def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes,
                     num_edge_types=len(graph_edge_list),
                     input_repr_size=100,
                     output_repr_size=100,
-                    propose_repr_size=50,
-                    propagate_repr_size=50,
+                    propose_repr_size=process_repr_size,
+                    propagate_repr_size=process_repr_size,
                     new_nodes_per_iter=new_nodes_per_iter,
                     output_format=output_format,
                     final_propagate=5,
@@ -124,7 +124,7 @@ def main(task_dir, output_format_str, state_width, dynamic_nodes, mutable_nodes,
         print("Wrote visualization files to {}.".format(outputdir))
     else:
         print("Starting to train...")
-        status = babi_train.train(m, bucketed, bucket_sizes, len(eff_anslist), output_format, num_updates, outputdir, start_idx, batch_size, validation_buckets, validation_bucket_sizes, stop_at_accuracy, stop_at_overfitting, train_save_params, batch_adjust)
+        status = babi_train.train(m, bucketed, bucket_sizes, len(eff_anslist), output_format, num_updates, outputdir, start_idx, batch_size, validation_buckets, validation_bucket_sizes, stop_at_accuracy, stop_at_loss, stop_at_overfitting, train_save_params, batch_adjust)
         save_params(m.params, open( os.path.join(outputdir, "final_params.p"), "wb" ) )
         if set_exit_status:
             sys.exit(status.value)
@@ -133,6 +133,7 @@ parser = argparse.ArgumentParser(description='Train a graph memory network model
 parser.add_argument('task_dir', help="Parsed directory for the task to load")
 parser.add_argument('output_format_str', choices=[x.name for x in model.ModelOutputFormat], help="Output format for the task")
 parser.add_argument('state_width', type=int, help="Width of node state")
+parser.add_argument('--process-repr-size', type=int, default=50, help="Width of intermediate representations")
 parser.add_argument('--mutable-nodes', action="store_true", help="Make nodes mutable")
 parser.add_argument('--wipe-node-state', action="store_true", help="Wipe node state before the query")
 parser.add_argument('--direct-reference', action="store_true", help="Use direct reference for input, based on node names")
@@ -154,6 +155,7 @@ parser.add_argument('--visualize', nargs="?", const=True, default=False, type=la
 parser.add_argument('--debugtest', action="store_true", help="Debug the training state")
 parser.add_argument('--evaluate-accuracy', action="store_true", help="Evaluate accuracy of model")
 parser.add_argument('--stop-at-accuracy', type=float, default=None, help="Stop training once it reaches this accuracy on validation set")
+parser.add_argument('--stop-at-loss', type=float, default=None, help="Stop training once it reaches this loss on validation set")
 parser.add_argument('--stop-at-overfitting', type=float, default=None, help="Stop training once validation loss is this many times higher than train loss")
 parser.add_argument('--batch-adjust', type=int, default=None, help="If set, ensure that size of edge matrix does not exceed this")
 parser.add_argument('--set-exit-status', action="store_true", help="Give info about training status in the exit status")

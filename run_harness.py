@@ -4,7 +4,7 @@ import subprocess
 import shutil
 import shlex
 import collections
-from babi_train import TrainExitStatus
+from train_exit_status import TrainExitStatus
 from graceful_interrupt import GracefulInterruptHandler
 from termcolor import colored
 
@@ -52,12 +52,12 @@ def run(tasks_dir, output_dir, base_params, specs):
                 interrupted = handler.interrupted
         task_status = TrainExitStatus(returncode)
 
-        if task_status == TrainExitStatus.accuracy_success:
-            print(colored("SUCCESS! Reached desired accuracy.","green"))
+        if task_status == TrainExitStatus.success:
+            print(colored("SUCCESS! Reached desired correctness.","green"))
             with open(completed_file,'w') as f:
                 f.write("SUCCESS\n")
         elif task_status == TrainExitStatus.reached_update_limit:
-            print(colored("FAIL! Reached update limit without attaining desired accuracy.","red"))
+            print(colored("FAIL! Reached update limit without attaining desired correctness.","red"))
             with open(completed_file,'w') as f:
                 f.write("FAIL_UPDATE_LIMIT\n")
         elif task_status == TrainExitStatus.overfitting:
