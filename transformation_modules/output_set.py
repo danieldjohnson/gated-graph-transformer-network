@@ -31,7 +31,7 @@ class OutputSetTransformation( object ):
         Returns: Set distribution of shape (n_batch, 1, num_categories), where each value is independent from
             the others.
         """
-        transformed = self._transform_stack.process(input_vector)
+        transformed, _ = self._transform_stack.process(input_vector, None)
         return T.shape_padaxis(transformed,1)
 
     def snap_to_best(self, answer):
