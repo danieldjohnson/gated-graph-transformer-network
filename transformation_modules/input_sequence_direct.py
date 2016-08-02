@@ -30,14 +30,7 @@ class InputSequenceDirectTransformation( object ):
     def params(self):
         return self._gru.params
 
-    @property
-    def num_dropout_masks(self):
-        return self._gru.num_dropout_masks
-
-    def get_dropout_masks(self, srng, keep_frac):
-        return self._gru.get_dropout_masks(srng, keep_frac)
-
-    def process(self, inputs, dropout_masks=None):
+    def process(self, inputs):
         """
         Process a set of inputs and return the final state
 
@@ -54,15 +47,15 @@ class InputSequenceDirectTransformation( object ):
                     .reshape([n_batch, input_len, self._num_words])
         one_hot_valseq = one_hot_vals.dimshuffle([1,0,2])
 
-        def scan_fn(idx_ipt, onehot_ipt, last_accum, last_state, *dmasks):
+        def scan_fn(idx_ipt, onehot_ipt, last_accum, last_state):
             # last_accum stores accumulated outputs per word type
             # and is of shape (n_batch, word_idx, output_width)
-            gru_state = self._gru.step(onehot_ipt, last_state, dmasks if dropout_masks is not None else None)
+            gru_state, _ = self._gru.step(onehot_ipt, last_state, None)
             new_accum = T.inc_subtensor(last_accum[T.arange(n_batch), idx_ipt, :], gru_state)
             return new_accum, gru_state
 
         outputs_info = [T.zeros([n_batch, self._num_words, self._output_width]), self._gru.initial_state(n_batch)]
-        (all_accum, all_out), _ = theano.scan(scan_fn, sequences=[valseq, one_hot_valseq], non_sequences=(dropout_masks if dropout_masks is not None else []), outputs_info=outputs_info)
+        (all_accum, all_out), _ = theano.scan(scan_fn, sequences=[valseq, one_hot_valseq], outputs_info=outputs_info)
         
         # all_out is of shape (input_len, n_batch, self.output_width). We want last timestep
         repr_vect = all_out[-1,:,:]

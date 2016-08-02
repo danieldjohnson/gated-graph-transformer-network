@@ -403,6 +403,8 @@ class Model( object ):
 
         self.info_keys = list(train_info.keys())
 
+        print("Compiling...")
+
         optimizer = theano.compile.predefined_optimizers['fast_run' if self.check_mode == 'debug' else theano.config.optimizer]
         optimizer = optimizer.excluding("scanOp_pushout_output","remove_constants_and_unused_inputs_scan")
         if self.check_mode == 'nan':

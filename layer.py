@@ -27,7 +27,7 @@ class Layer(object):
     def split_dropout_masks(self, dropout_masks):
         if dropout_masks is None:
             return [], None
-        idx = (self._dropout_keep == 1)
+        idx = (self.dropout_keep != 1)
         return dropout_masks[:idx], dropout_masks[idx:]
 
     def process(self, ipt, dropout_masks):
@@ -65,7 +65,7 @@ class LayerStack(object):
     def dropout_masks(self, srng):
         masks = [mask for layer in self.layers for mask in layer.dropout_masks(srng)]
         if self.dropout_keep != 1 and self.dropout_output:
-            masks.append(make_dropout_mask((self._representation_width,), self.dropout_keep, srng))
+            masks.append(make_dropout_mask((self.output_size,), self.dropout_keep, srng))
         return masks
 
     def split_dropout_masks(self, dropout_masks):

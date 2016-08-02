@@ -13,7 +13,7 @@ class NewNodesInformTransformation( object ):
     """
     Transforms a graph state by adding nodes, conditioned on an input vector
     """
-    def __init__(self, input_width, inform_width, proposal_width, graph_spec, dropout_keep=1, use_old_aggregate=False):
+    def __init__(self, input_width, inform_width, proposal_width, graph_spec, use_old_aggregate=False, dropout_keep=1):
         """
         Params:
             input_width: Integer giving size of input
@@ -72,7 +72,7 @@ class NewNodesInformTransformation( object ):
 
         outputs_info = [self._proposer_gru.initial_state(n_batch)]
         gru_dropout_masks, dropout_masks = self._proposer_gru.split_dropout_masks(dropout_masks)
-        proposer_step = lambda st,ipt,*dm: self._proposer_gru.step(ipt,st,dm)
+        proposer_step = lambda st,ipt,*dm: self._proposer_gru.step(ipt, st, dm if dropout_masks is not None else None)[0]
         raw_proposal_acts, _ = theano.scan(proposer_step, n_steps=max_candidates, non_sequences=[full_input]+gru_dropout_masks, outputs_info=outputs_info)
 
         # raw_proposal_acts is of shape (candidate, n_batch, blah)

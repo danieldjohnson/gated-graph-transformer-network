@@ -43,12 +43,12 @@ class OutputSequenceTransformation( object ):
         """
         n_batch = input_vector.shape[0]
         outputs_info = [self._seq_gru.initial_state(n_batch)]
-        scan_step = lambda state, ipt, *dm: self._seq_gru.step(ipt, state, dm if dropout_masks is not None else None)
+        scan_step = lambda state, ipt, *dm: self._seq_gru.step(ipt, state, dm if dropout_masks is not None else None)[0]
         all_out, _ = theano.scan(scan_step, non_sequences=[input_vector]+(dropout_masks if dropout_masks is not None else []), n_steps=seq_len, outputs_info=outputs_info)
 
         # all_out is of shape (seq_len, n_batch, state_size). Squash and apply layer
         flat_out = all_out.reshape([-1, self._state_size])
-        flat_final = self._transform_stack.process(flat_out)
+        flat_final, _ = self._transform_stack.process(flat_out, None)
         final = flat_final.reshape([seq_len, n_batch, self._num_words]).dimshuffle([1,0,2])
 
         return final

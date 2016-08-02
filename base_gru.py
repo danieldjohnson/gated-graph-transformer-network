@@ -55,7 +55,7 @@ class BaseGRULayer( object ):
         return T.zeros([batch_size, self.output_width])
 
     def dropout_masks(self, srng):
-        if self.dropout_keep == 1:
+        if self._dropout_keep == 1:
             return []
         else:
             masks = []
@@ -68,7 +68,7 @@ class BaseGRULayer( object ):
     def split_dropout_masks(self, dropout_masks):
         if dropout_masks is None:
             return [], None
-        idx = self._dropout_input + self._dropout_output
+        idx = (self._dropout_keep != 1) * (self._dropout_input + self._dropout_output)
         return dropout_masks[:idx], dropout_masks[idx:]
 
     def step(self, ipt, state, dropout_masks):
@@ -82,7 +82,7 @@ class BaseGRULayer( object ):
 
         Returns: The next output state
         """
-        if self.dropout_keep != 1 and self._dropout_input and dropout_masks not in ([], None):
+        if self._dropout_keep != 1 and self._dropout_input and dropout_masks is not None:
                 ipt_masks = dropout_masks[0]
                 ipt = apply_dropout(ipt, ipt_masks)
                 dropout_masks = dropout_masks[1:]
@@ -97,7 +97,7 @@ class BaseGRULayer( object ):
 
         newstate = update * state + (1-update) * candidate_act
 
-        if self.dropout_keep != 1 and self._dropout_output and dropout_masks not in ([], None):
+        if self._dropout_keep != 1 and self._dropout_output and dropout_masks is not None:
                 newstate_masks = dropout_masks[0]
                 newstate = apply_dropout(newstate, newstate_masks)
                 dropout_masks = dropout_masks[1:]

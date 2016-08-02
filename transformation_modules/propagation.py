@@ -90,7 +90,8 @@ class PropagationTransformation( object ):
 
         def _scan_step(cur_node_states, node_strengths, node_ids, edge_strengths, *dmasks):
             curstate = GraphState(node_strengths, node_ids, cur_node_states, edge_strengths)
-            return self.process(curstate, dmasks).node_states
+            newstate, _ = self.process(curstate, dmasks if dropout_masks is not None else None)
+            return newstate.node_states
 
         outputs_info = [gstate.node_states]
         used_dropout_masks, dropout_masks = self.split_dropout_masks(dropout_masks)
