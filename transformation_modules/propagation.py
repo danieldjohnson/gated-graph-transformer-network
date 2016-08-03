@@ -30,8 +30,8 @@ class PropagationTransformation( object ):
     def params(self):
         return self._propagation_gru.params +  self._transfer_stack.params
 
-    def dropout_masks(self, srng):
-        return self._transfer_stack.dropout_masks(srng) + self._propagation_gru.dropout_masks(srng)
+    def dropout_masks(self, srng, state_mask=None):
+        return self._transfer_stack.dropout_masks(srng) + self._propagation_gru.dropout_masks(srng, use_output=state_mask)
 
     def split_dropout_masks(self, dropout_masks):
         transfer_used, dropout_masks = self._transfer_stack.split_dropout_masks(dropout_masks)

@@ -176,17 +176,19 @@ class Model( object ):
 
             if using_dropout:
                 iter_dropouts = []
+                states_mask = util.make_dropout_mask((self.node_state_size,), self.dropout_keep, self.srng)
                 if self.nodes_mutable:
-                    iter_dropouts.extend(self.node_state_updater.dropout_masks(self.srng))
+                    iter_dropouts.extend(self.node_state_updater.dropout_masks(self.srng, states_mask))
                 if len(self.word_node_mapping) > 0:
-                    iter_dropouts.extend(self.direct_reference_updater.dropout_masks(self.srng))
+                    iter_dropouts.extend(self.direct_reference_updater.dropout_masks(self.srng, states_mask))
                 if self.intermediate_propagate != 0:
-                    iter_dropouts.extend(self.intermediate_propagator.dropout_masks(self.srng))
+                    iter_dropouts.extend(self.intermediate_propagator.dropout_masks(self.srng, states_mask))
                 if self.dynamic_nodes:
                     iter_dropouts.extend(self.new_node_adder.dropout_masks(self.srng))
                 iter_dropouts.extend(self.edge_state_updater.dropout_masks(self.srng))
             else:
                 iter_dropouts = []
+                states_mask = None
 
             def _iter_fn(input_repr, ref_matrix, gstate, correct_num_new_nodes=None, correct_new_strengths=None, correct_new_node_ids=None, correct_edges=None, dropout_masks=None):
                 # If necessary, update node state
@@ -347,14 +349,14 @@ class Model( object ):
                 if self.wipe_node_state:
                     final_gstate = final_gstate.with_updates(node_states=T.zeros_like(final_gstate.node_states))
 
-                qnsu_dropout_masks = self.query_node_state_updater.dropout_masks(self.srng)
+                qnsu_dropout_masks = self.query_node_state_updater.dropout_masks(self.srng, states_mask)
                 query_gstate, _ = self.query_node_state_updater.process(final_gstate, query_repr, qnsu_dropout_masks)
 
                 if len(self.word_node_mapping) > 0:
-                    qdru_dropout_masks = self.query_direct_reference_updater.dropout_masks(self.srng)
+                    qdru_dropout_masks = self.query_direct_reference_updater.dropout_masks(self.srng, states_mask)
                     query_gstate, _ = self.query_direct_reference_updater.process(query_gstate, query_ref_matrix, qdru_dropout_masks)
 
-                fp_dropout_masks = self.final_propagator.dropout_masks(self.srng)
+                fp_dropout_masks = self.final_propagator.dropout_masks(self.srng, states_mask)
                 propagated_gstate, _ = self.final_propagator.process_multiple(query_gstate, self.final_propagate, fp_dropout_masks)
 
                 agg_dropout_masks = self.aggregator.dropout_masks(self.srng)

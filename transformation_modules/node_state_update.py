@@ -25,8 +25,8 @@ class NodeStateUpdateTransformation( object ):
     def params(self):
         return self._update_gru.params
 
-    def dropout_masks(self, srng):
-        return self._update_gru.dropout_masks(srng)
+    def dropout_masks(self, srng, state_mask=None):
+        return self._update_gru.dropout_masks(srng, use_output=state_mask)
 
     def process(self, gstate, input_vector, dropout_masks=Ellipsis):
         """

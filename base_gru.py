@@ -54,7 +54,7 @@ class BaseGRULayer( object ):
         """
         return T.zeros([batch_size, self.output_width])
 
-    def dropout_masks(self, srng):
+    def dropout_masks(self, srng, use_output=None):
         if self._dropout_keep == 1:
             return []
         else:
@@ -62,7 +62,10 @@ class BaseGRULayer( object ):
             if self._dropout_input:
                 masks.append(make_dropout_mask((self._input_width,), self._dropout_keep, srng))
             if self._dropout_output:
-                masks.append(make_dropout_mask((self._output_width,), self._dropout_keep, srng))
+                if use_output is not None:
+                    masks.append(use_output)
+                else:
+                    masks.append(make_dropout_mask((self._output_width,), self._dropout_keep, srng))
             return masks
 
     def split_dropout_masks(self, dropout_masks):
