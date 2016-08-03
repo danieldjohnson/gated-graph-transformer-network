@@ -24,14 +24,7 @@ class OutputSequenceTransformation( object ):
     def params(self):
         return self._seq_gru.params + self._transform_stack.params
 
-    @property
-    def num_dropout_masks(self):
-        return self._seq_gru.num_dropout_masks
-
-    def get_dropout_masks(self, srng, keep_frac):
-        return self._seq_gru.get_dropout_masks(srng, keep_frac)
-
-    def process(self, input_vector, seq_len, dropout_masks=None):
+    def process(self, input_vector, seq_len):
         """
         Convert an input vector into a sequence of categorical distributions
 
@@ -43,12 +36,12 @@ class OutputSequenceTransformation( object ):
         """
         n_batch = input_vector.shape[0]
         outputs_info = [self._seq_gru.initial_state(n_batch)]
-        scan_step = lambda state, ipt, *dm: self._seq_gru.step(ipt, state, dm if dropout_masks is not None else None)[0]
-        all_out, _ = theano.scan(scan_step, non_sequences=[input_vector]+(dropout_masks if dropout_masks is not None else []), n_steps=seq_len, outputs_info=outputs_info)
+        scan_step = lambda state, ipt: self._seq_gru.step(ipt, state)
+        all_out, _ = theano.scan(scan_step, non_sequences=[input_vector], n_steps=seq_len, outputs_info=outputs_info)
 
         # all_out is of shape (seq_len, n_batch, state_size). Squash and apply layer
         flat_out = all_out.reshape([-1, self._state_size])
-        flat_final, _ = self._transform_stack.process(flat_out, None)
+        flat_final = self._transform_stack.process(flat_out)
         final = flat_final.reshape([seq_len, n_batch, self._num_words]).dimshuffle([1,0,2])
 
         return final

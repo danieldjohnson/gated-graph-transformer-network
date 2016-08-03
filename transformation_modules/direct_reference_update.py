@@ -28,7 +28,7 @@ class DirectReferenceUpdateTransformation( object ):
     def dropout_masks(self, srng):
         return self._update_gru.dropout_masks(srng)
 
-    def process(self, gstate, ref_matrix, dropout_masks):
+    def process(self, gstate, ref_matrix, dropout_masks=Ellipsis):
         """
         Process a direct ref matrix and update the state accordingly. Each node runs a GRU step
         with previous state from the node state and input from the matrix.
@@ -37,6 +37,11 @@ class DirectReferenceUpdateTransformation( object ):
             gstate: A GraphState giving the current state
             ref_matrix: A tensor of the form (n_batch, num_node_ids, input_width)
         """
+        if dropout_masks is Ellipsis:
+            dropout_masks = None
+            append_masks = False
+        else:
+            append_masks = True
 
         # To process the input, we need to map from node id to node index
         # We can do this using the gstate.node_ids, of shape (n_batch, n_nodes, num_node_ids)
@@ -55,7 +60,10 @@ class DirectReferenceUpdateTransformation( object ):
         new_node_states = new_flat_state.reshape(gstate.node_states.shape)
 
         new_gstate = gstate.with_updates(node_states=new_node_states)
-        return new_gstate, dropout_masks
+        if append_masks:
+            return new_gstate, dropout_masks
+        else:
+            return new_gstate
 
 
 

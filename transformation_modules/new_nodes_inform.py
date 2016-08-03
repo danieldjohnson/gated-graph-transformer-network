@@ -42,7 +42,7 @@ class NewNodesInformTransformation( object ):
     def dropout_masks(self, srng):
         return self._inform_aggregate.dropout_masks(srng) + self._proposer_gru.dropout_masks(srng) + self._proposer_stack.dropout_masks(srng)
 
-    def get_candidates(self, gstate, input_vector, max_candidates, dropout_masks):
+    def get_candidates(self, gstate, input_vector, max_candidates, dropout_masks=Ellipsis):
         """
         Get the current candidate new nodes. This is accomplished as follows:
           1. Using the aggregate transformation, we gather information from nodes (who should have performed
@@ -62,6 +62,12 @@ class NewNodesInformTransformation( object ):
             new_strengths: A tensor of the form (n_batch, new_node_idx)
             new_ids: A tensor of the form (n_batch, new_node_idx, num_node_ids)
         """
+        if dropout_masks is Ellipsis:
+            dropout_masks = None
+            append_masks = False
+        else:
+            append_masks = True
+
         n_batch = gstate.n_batch
         n_nodes = gstate.n_nodes
 
@@ -83,15 +89,26 @@ class NewNodesInformTransformation( object ):
 
         new_strengths = candidate_strengths.dimshuffle([1,0])
         new_ids = candidate_ids.dimshuffle([1,0,2])
-        return new_strengths, new_ids, dropout_masks
+        if append_masks:
+            return new_strengths, new_ids, dropout_masks
+        else:
+            return new_strengths, new_ids
 
-    def process(self, gstate, input_vector, max_candidates, dropout_masks):
+    def process(self, gstate, input_vector, max_candidates, dropout_masks=Ellipsis):
         """
         Process an input vector and update the state accordingly.
         """
+        if dropout_masks is Ellipsis:
+            dropout_masks = None
+            append_masks = False
+        else:
+            append_masks = True
         new_strengths, new_ids, dropout_masks = self.get_candidates(gstate, input_vector, max_candidates, dropout_masks)
         new_gstate = gstate.with_additional_nodes(new_strengths, new_ids)
-        return new_gstate, dropout_masks
+        if append_masks:
+            return new_gstate, dropout_masks
+        else:
+            return new_gstate
 
 
     

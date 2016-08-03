@@ -27,7 +27,7 @@ class InputSequenceTransformation( object ):
     def get_dropout_masks(self, srng, keep_frac):
         return self._gru.get_dropout_masks(srng, keep_frac)
 
-    def process(self, inputs, dropout_masks=None):
+    def process(self, inputs):
         """
         Process a set of inputs and return the final state
 
@@ -40,8 +40,7 @@ class InputSequenceTransformation( object ):
         valseq = T.extra_ops.to_one_hot(inputs.flatten(), self._num_words)\
                     .reshape([n_batch, input_len, self._num_words]).dimshuffle([1,0,2])
         outputs_info = [self._gru.initial_state(n_batch)]
-        gru_step = lambda ip,st,*dm: self._gru.step(ipt,st,dm if dropout_masks is not None else None)
-        all_out, _ = theano.scan(self._gru.step, sequences=[valseq], non_sequences=(dropout_masks if dropout_masks is not None else []), outputs_info=outputs_info)
+        all_out, _ = theano.scan(self._gru.step, sequences=[valseq], outputs_info=outputs_info)
 
         # all_out is of shape (input_len, n_batch, self.output_width). We want last timestep
         return all_out[-1,:,:]

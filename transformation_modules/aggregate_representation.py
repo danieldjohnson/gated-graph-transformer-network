@@ -23,7 +23,7 @@ class AggregateRepresentationTransformation( object ):
     def dropout_masks(self, srng):
         return self._representation_stack.dropout_masks(srng)
 
-    def process(self, gstate, dropout_masks):
+    def process(self, gstate, dropout_masks=Ellipsis):
         """
         Convert the graph state to a representation vector, using sigmoid attention to scale representations
 
@@ -32,6 +32,11 @@ class AggregateRepresentationTransformation( object ):
 
         Returns: A representation vector of shape (n_batch, representation_width)
         """
+        if dropout_masks is Ellipsis:
+            dropout_masks = None
+            append_masks = False
+        else:
+            append_masks = True
 
         flat_obs = T.concatenate([
                         gstate.node_ids.reshape([-1, self._graph_spec.num_node_ids]),
@@ -44,7 +49,10 @@ class AggregateRepresentationTransformation( object ):
         representations = T.tanh(activations[:,:,1:])
 
         result = T.tanh(T.sum(selector * representations, 1))
-        return result, dropout_masks
+        if append_masks:
+            return result, dropout_masks
+        else:
+            return result
 
 
 

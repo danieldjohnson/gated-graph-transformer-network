@@ -30,13 +30,21 @@ class Layer(object):
         idx = (self.dropout_keep != 1)
         return dropout_masks[:idx], dropout_masks[idx:]
 
-    def process(self, ipt, dropout_masks):
+    def process(self, ipt, dropout_masks=Ellipsis):
+        if dropout_masks is Ellipsis:
+            dropout_masks = None
+            append_masks = False
+        else:
+            append_masks = True
         if self.dropout_keep != 1 and dropout_masks not in ([], None):
             ipt = apply_dropout(ipt, dropout_masks[0])
             dropout_masks = dropout_masks[1:]
         xW = T.dot(ipt, self._W)
         b = T.shape_padleft(self._b)
-        return self.activation( xW + b ), dropout_masks
+        if append_masks:
+            return self.activation( xW + b ), dropout_masks
+        else:
+            return self.activation( xW + b )
 
 class LayerStack(object):
     def __init__(self, input_size, output_size, hidden_sizes=[], bias_shift=0.0, name=None, hidden_activation=T.tanh, activation=lambda x:x, dropout_keep=1, dropout_input=True, dropout_output=False):
@@ -80,14 +88,22 @@ class LayerStack(object):
             dropout_masks = dropout_masks[1:]
         return used, dropout_masks
 
-    def process(self, ipt, dropout_masks):
+    def process(self, ipt, dropout_masks=Ellipsis):
+        if dropout_masks is Ellipsis:
+            dropout_masks = None
+            append_masks = False
+        else:
+            append_masks = True
         val = ipt
         for layer in self.layers:
             val, dropout_masks = layer.process(val, dropout_masks)
         if self.dropout_keep != 1 and self.dropout_output and dropout_masks not in ([], None):
             val = apply_dropout(val, dropout_masks[0])
             dropout_masks = dropout_masks[1:]
-        return val, dropout_masks
+        if append_masks:
+            return val, dropout_masks
+        else:
+            return val
 
 
 

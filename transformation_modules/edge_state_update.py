@@ -29,7 +29,7 @@ class EdgeStateUpdateTransformation( object ):
     def dropout_masks(self, srng):
         return self._update_stack.dropout_masks(srng)
 
-    def process(self, gstate, input_vector, dropout_masks):
+    def process(self, gstate, input_vector, dropout_masks=Ellipsis):
         """
         Process an input vector and update the state accordingly. Each node runs a GRU step
         with previous state from the node state and input from the vector.
@@ -38,6 +38,11 @@ class EdgeStateUpdateTransformation( object ):
             gstate: A GraphState giving the current state
             input_vector: A tensor of the form (n_batch, input_width)
         """
+        if dropout_masks is Ellipsis:
+            dropout_masks = None
+            append_masks = False
+        else:
+            append_masks = True
 
         # gstate.edge_states is of shape (n_batch, n_nodes, n_nodes, id+state)
         # combined input should be broadcasted to (n_batch, n_nodes, n_nodes, X)
@@ -56,5 +61,8 @@ class EdgeStateUpdateTransformation( object ):
         new_strengths = gstate.edge_strengths*(1-should_clear) + (1-gstate.edge_strengths)*should_set
 
         new_gstate = gstate.with_updates(edge_strengths=new_strengths)
-        return new_gstate, dropout_masks
+        if append_masks:
+            return new_gstate, dropout_masks
+        else:
+            return new_gstate
 

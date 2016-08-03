@@ -71,7 +71,7 @@ class BaseGRULayer( object ):
         idx = (self._dropout_keep != 1) * (self._dropout_input + self._dropout_output)
         return dropout_masks[:idx], dropout_masks[idx:]
 
-    def step(self, ipt, state, dropout_masks):
+    def step(self, ipt, state, dropout_masks=Ellipsis):
         """
         Perform a single step of the network
 
@@ -82,6 +82,12 @@ class BaseGRULayer( object ):
 
         Returns: The next output state
         """
+        if dropout_masks is Ellipsis:
+            dropout_masks = None
+            append_masks = False
+        else:
+            append_masks = True
+
         if self._dropout_keep != 1 and self._dropout_input and dropout_masks is not None:
                 ipt_masks = dropout_masks[0]
                 ipt = apply_dropout(ipt, ipt_masks)
@@ -102,4 +108,7 @@ class BaseGRULayer( object ):
                 newstate = apply_dropout(newstate, newstate_masks)
                 dropout_masks = dropout_masks[1:]
 
-        return newstate, dropout_masks
+        if append_masks:
+            return newstate, dropout_masks
+        else:
+            return newstate

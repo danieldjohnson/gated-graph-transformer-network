@@ -28,7 +28,7 @@ class NodeStateUpdateTransformation( object ):
     def dropout_masks(self, srng):
         return self._update_gru.dropout_masks(srng)
 
-    def process(self, gstate, input_vector, dropout_masks):
+    def process(self, gstate, input_vector, dropout_masks=Ellipsis):
         """
         Process an input vector and update the state accordingly. Each node runs a GRU step
         with previous state from the node state and input from the vector.
@@ -40,6 +40,11 @@ class NodeStateUpdateTransformation( object ):
 
         # gstate.node_states is of shape (n_batch, n_nodes, node_state_width)
         # input_vector should be broadcasted to match this
+        if dropout_masks is Ellipsis:
+            dropout_masks = None
+            append_masks = False
+        else:
+            append_masks = True
         prepped_input_vector = T.tile(T.shape_padaxis(input_vector, 1), [1, gstate.n_nodes, 1])
         full_input = T.concatenate([gstate.node_ids, prepped_input_vector], 2)
 
@@ -51,7 +56,10 @@ class NodeStateUpdateTransformation( object ):
         new_node_states = new_flat_state.reshape(gstate.node_states.shape)
 
         new_gstate = gstate.with_updates(node_states=new_node_states)
-        return new_gstate, dropout_masks
+        if append_masks:
+            return new_gstate, dropout_masks
+        else:
+            return new_gstate
 
 
 

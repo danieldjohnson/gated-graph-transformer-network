@@ -38,7 +38,7 @@ class PropagationTransformation( object ):
         gru_used, dropout_masks = self._propagation_gru.split_dropout_masks(dropout_masks)
         return (transfer_used+gru_used), dropout_masks
 
-    def process(self, gstate, dropout_masks):
+    def process(self, gstate, dropout_masks=Ellipsis):
         """
         Process a graph state.
           1. Data is transfered from each node to each other node along both forward and backward edges.
@@ -49,6 +49,11 @@ class PropagationTransformation( object ):
         Params:
             gstate: A GraphState giving the current state
         """
+        if dropout_masks is Ellipsis:
+            dropout_masks = None
+            append_masks = False
+        else:
+            append_masks = True
 
         node_obs = T.concatenate([gstate.node_ids, gstate.node_states],2)
         flat_node_obs = node_obs.reshape([-1, self._process_input_size])
@@ -77,9 +82,12 @@ class PropagationTransformation( object ):
         new_node_states = new_flat_state.reshape(gstate.node_states.shape)
 
         new_gstate = gstate.with_updates(node_states=new_node_states)
-        return new_gstate, dropout_masks
+        if append_masks:
+            return new_gstate, dropout_masks
+        else:
+            return new_gstate
 
-    def process_multiple(self, gstate, iterations, dropout_masks):
+    def process_multiple(self, gstate, iterations, dropout_masks=Ellipsis):
         """
         Run multiple propagagtion steps.
 
@@ -87,6 +95,11 @@ class PropagationTransformation( object ):
             gstate: A GraphState giving the current state
             iterations: An integer. How many steps to propagate
         """
+        if dropout_masks is Ellipsis:
+            dropout_masks = None
+            append_masks = False
+        else:
+            append_masks = True
 
         def _scan_step(cur_node_states, node_strengths, node_ids, edge_strengths, *dmasks):
             curstate = GraphState(node_strengths, node_ids, cur_node_states, edge_strengths)
@@ -98,5 +111,8 @@ class PropagationTransformation( object ):
         all_node_states, _ = theano.scan(_scan_step, n_steps=iterations, non_sequences=[gstate.node_strengths, gstate.node_ids, gstate.edge_strengths] + used_dropout_masks, outputs_info=outputs_info)
 
         final_gstate = gstate.with_updates(node_states=all_node_states[-1,:,:,:])
-        return final_gstate, dropout_masks
+        if append_masks:
+            return final_gstate, dropout_masks
+        else:
+            return final_gstate
 

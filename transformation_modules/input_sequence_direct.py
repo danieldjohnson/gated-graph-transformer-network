@@ -50,7 +50,7 @@ class InputSequenceDirectTransformation( object ):
         def scan_fn(idx_ipt, onehot_ipt, last_accum, last_state):
             # last_accum stores accumulated outputs per word type
             # and is of shape (n_batch, word_idx, output_width)
-            gru_state, _ = self._gru.step(onehot_ipt, last_state, None)
+            gru_state = self._gru.step(onehot_ipt, last_state)
             new_accum = T.inc_subtensor(last_accum[T.arange(n_batch), idx_ipt, :], gru_state)
             return new_accum, gru_state
 

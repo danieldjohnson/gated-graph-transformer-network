@@ -30,7 +30,7 @@ class OutputCategoryTransformation( object ):
         Returns: Categorical distribution of shape (n_batch, 1, num_categories), such that it sums to 1 across
             all categories for each instance in the batch
         """
-        transformed, _ = self._transform_stack.process(input_vector, None)
+        transformed = self._transform_stack.process(input_vector)
         return T.shape_padaxis(transformed,1)
 
     def snap_to_best(self, answer):
