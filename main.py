@@ -116,7 +116,7 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
         print("Wrote visualization files to {}.".format(outputdir))
     elif evaluate_accuracy:
         print("Evaluating accuracy...")
-        acc = babi_train.test_accuracy(m, bucketed, bucket_sizes, len(eff_anslist), output_format, batch_size)
+        acc = babi_train.test_accuracy(m, bucketed, bucket_sizes, len(eff_anslist), output_format, batch_size, batch_adjust, (not train_with_query))
         print("Obtained accuracy of {}".format(acc))
     elif debugtest:
         print("Starting debug test...")
