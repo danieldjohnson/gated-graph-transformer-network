@@ -1,61 +1,25 @@
-import numpy as np
-from IPython.display import Javascript
-import json
-
-from IPython.core.display import HTML
-
-from sklearn.random_projection import GaussianRandomProjection
-from sklearn.utils.validation import NotFittedError
-
-id_projector = GaussianRandomProjection(n_components=3)
-edge_projector = GaussianRandomProjection(n_components=3)
-
-STATE_WIDTH = 50
-def graph_display(states, extra_forces=[], edge_strength_adjust=[]):
-    clean_states = [x.tolist() for x in states]
-    nstr, nid, nstate, estr = states
-    flat_nid = nid.reshape([-1,nid.shape[-1]])
-    flat_estr = estr.reshape([-1,estr.shape[-1]])
-    flat_estr = flat_estr / (np.linalg.norm(flat_estr, axis=1, keepdims=True) + 1e-8)
-    try:
-        flat_transf_nid = id_projector.transform(flat_nid)
-        flat_transf_estr = edge_projector.transform(flat_estr)
-    except:
-        flat_transf_nid = id_projector.fit_transform(flat_nid)
-        flat_transf_estr = edge_projector.fit_transform(flat_estr)
-    minlevel = np.min(flat_transf_nid)
-    maxlevel = np.max(flat_transf_nid)
-    node_colors = (flat_transf_nid-minlevel)/(maxlevel-minlevel)
-    minlevel = np.min(flat_transf_estr)
-    maxlevel = np.max(flat_transf_estr)
-    edge_colors = (flat_transf_estr-minlevel)/(maxlevel-minlevel)
-    colormap = {
-        "node_id": node_colors.reshape(nid.shape[:-1] + (3,)).tolist(),
-        "edge_type": edge_colors.reshape(estr.shape[:-1] + (3,)).tolist(),
-    }
-    print(json.dumps(edge_strength_adjust))
-    return Javascript("window._graph_display({}, {}, element[0],0,{},{});".format(
-            json.dumps(clean_states),
-            json.dumps(colormap),
-            json.dumps(extra_forces),
-            json.dumps(edge_strength_adjust)))
-
-JS_SETUP_STRING = """
 require.config({
   paths: {
-      d3: '//cdnjs.cloudflare.com/ajax/libs/d3/4.1.0/d3.min',
-      dat: '//cdnjs.cloudflare.com/ajax/libs/dat-gui/0.5.1/dat.gui.min'
+      d3: 'http://cdnjs.cloudflare.com/ajax/libs/d3/4.1.0/d3.min',
+      dat: 'http://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.5.1/dat.gui.min'
   }
 });
 
 require(['d3','dat'], function(d3,_ignored){
-function _graph_display(states,colormap,el,batch,extra_snap_specs,edge_strength_adjust){
+function _graph_display(states,colormap,el,batch,options){
     var node_strengths = states[0];
     var node_ids = states[1];
     var node_states = states[2];
     var edge_strengths = states[3];
     var max_time = node_strengths[batch].length;
-    var svg = d3.select(el).append("svg").attr("width",500).attr("height",500);
+
+    var width = options.width || 500;
+    var height = options.height || 500;
+
+    var svg = d3.select(el).append("svg").attr("width",width).attr("height",height);
+
+    if(!options)
+        options = {}
 
     var node_map = {};
     var data_nodes = [];
@@ -65,22 +29,22 @@ function _graph_display(states,colormap,el,batch,extra_snap_specs,edge_strength_
     var force = d3.forceSimulation()
                     .force("charge", d3.forceManyBody())
                     .force("link", d3.forceLink())
-                    .force("gravityX", d3.forceX(250))
-                    .force("gravityY", d3.forceY(250));
+                    .force("gravityX", d3.forceX(width/2))
+                    .force("gravityY", d3.forceY(height/2));
 
-    if(!extra_snap_specs)
-        extra_snap_specs = [];
+    var extra_snap_specs = options.extra_snap_specs || [];
     var extra_forces = [];
     for(var i=0; i<extra_snap_specs.length; i++){
         var spec = extra_snap_specs[i];
         if(spec.axis == "x")
-            var new_force = d3.forceX(spec.value);
+            var new_force = d3.forceX(spec.value + width/2);
         else if(spec.axis == "y")
-            var new_force = d3.forceY(spec.value);
+            var new_force = d3.forceY(spec.value + height/2);
         force.force("extra"+i, new_force);
         extra_forces.push(new_force);
     }
 
+    var edge_strength_adjust = options.edge_strength_adjust
     if(!edge_strength_adjust){
         console.log("Using default edge_strength_adjust")
         edge_strength_adjust = [];
@@ -92,7 +56,6 @@ function _graph_display(states,colormap,el,batch,extra_snap_specs,edge_strength_
     var node = svg.append("g").selectAll("circle");
     
     var focus_detail = svg.append("g").selectAll("rect");
-
     
     var params = {
         linkDistance: 80,
@@ -103,6 +66,36 @@ function _graph_display(states,colormap,el,batch,extra_snap_specs,edge_strength_
         secondarySelection: 'Stored Selection 0',
         timestep:max_time-1,
     };
+
+    if(options.jitter){
+        params.jitterScale = 20;
+        function makeJitterForce(){
+            var nodes;
+            function forcefn(alpha){
+                if(alpha<0.2)
+                    return;
+                var n = nodes.length;
+                var node;
+                var jitter_amt = alpha * alpha * alpha * params.jitterScale;
+                for (var i = 0; i < n; ++i) {
+                    node = nodes[i];
+                    node.x += jitter_amt * (Math.random()*2-1);
+                    node.y += jitter_amt * (Math.random()*2-1);
+                }
+            }
+            forcefn.initialize = function(snodes){
+                nodes = snodes;
+            }
+            return forcefn;
+        }
+
+        force.force("jitter", makeJitterForce());
+    }
+
+    for(var key in params){
+        if(params.hasOwnProperty(key) && options[key] !== undefined)
+            params[key] = options[key];
+    }
     
     function colfn(key){
         return function(d){
@@ -160,8 +153,8 @@ function _graph_display(states,colormap,el,batch,extra_snap_specs,edge_strength_
                 color: colormap.node_id[batch][time][i],
                 id:cur_n_ids[i],
                 data: [n_strength].concat(cur_n_ids[i],cur_n_states[i].map(function(x){return (x+1.0)/2})),
-                x: (i < data_nodes.length) ? data_nodes[i].x : 200+100*Math.random(),
-                y: (i < data_nodes.length) ? data_nodes[i].y : 200+100*Math.random(),
+                x: (i < data_nodes.length) ? data_nodes[i].x : options.width*Math.random(),
+                y: (i < data_nodes.length) ? data_nodes[i].y : options.height*Math.random(),
             });
         }
         for(var i=0; i<n_nodes; i++){
@@ -247,12 +240,13 @@ function _graph_display(states,colormap,el,batch,extra_snap_specs,edge_strength_
     }
     update_state(params.timestep);
 
-    force.on("tick", function() {
+    function redraw() {
       link_fwd=link_fwd.attr('d',adjust(dir_edge_template,false));
 
       node=node.attr("cx", function(d) { return d.x; })
           .attr("cy", function(d) { return d.y; });
-    });
+    }
+    force.on("tick", redraw);
     
     node.call(d3.drag()
           .container(svg.node())
@@ -283,14 +277,17 @@ function _graph_display(states,colormap,el,batch,extra_snap_specs,edge_strength_
                     .attr('x',function(d,i){return div_w*i})
                     .attr('y',450);
     }
-    update_focus([0,0.2,0.4,0.6,0.8,1.0]);
     function do_focus(d){
+        if(options.noninteractive)
+            return;
         console.log("Focusing on ", d)
         update_focus(d.data);
     }
     
     var gui = new dat.GUI({ autoPlace: false });
-    el.insertBefore(gui.domElement, el.firstChild);
+
+    if(!options.noninteractive)
+        el.insertBefore(gui.domElement, el.firstChild);
     
     gui.add(params,"linkDistance").min(0).max(200).onChange(function(value) {
         force.force("link").distance(value);
@@ -311,6 +308,10 @@ function _graph_display(states,colormap,el,batch,extra_snap_specs,edge_strength_
     gui.add(params,"charge").min(0).max(200).onChange(function(value) {
         force.alpha(1).restart();
     });
+
+    if(options.jitter){
+        gui.add(params,"jitterScale").min(0).max(200);
+    }
     
     var last_timestep = params.timestep;
     gui.add(params,"timestep").min(0).max(max_time-1).step(1).onChange(function(value) {
@@ -319,11 +320,34 @@ function _graph_display(states,colormap,el,batch,extra_snap_specs,edge_strength_
             last_timestep = value;
         }
     });
+
+    function noninteractive_update(){
+        force.stop();
+        var startTicks = options.fullAlphaTicks || 0;
+        for(var i=0; i<startTicks; i++){
+            force.alpha(1);
+            force.tick();
+        }
+        while(force.alpha() > force.alphaMin()){
+            force.tick();
+        }
+        redraw();
+    }
+    if(options.noninteractive){
+        noninteractive_update();
+        return function(){
+            params.timestep++;
+            if(params.timestep < max_time){
+                update_state(params.timestep);
+                noninteractive_update();
+                return true;
+            } else
+                return false;
+        }
+    }
 }
 window._graph_display = _graph_display;
-element.text("Done!");
+console.log("Loaded display_graph");
+if(element)
+    element.text("Done!");
 });
-"""
-
-def setup_graph_display():
-    return Javascript(JS_SETUP_STRING)
