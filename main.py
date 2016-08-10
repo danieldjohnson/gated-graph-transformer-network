@@ -58,6 +58,7 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
         word_node_mapping = {}
 
     if unpickle_model is not None:
+        print("Unpickling model...")
         m = pickle.load(open(unpickle_model, 'rb'))
     else:
         m = model.Model(num_input_words=len(wordlist),
@@ -86,6 +87,8 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
                     check_mode=check_mode)
 
     if pickle_model is not None:
+        sys.setrecursionlimit(100000)
+        print("Pickling model...")
         pickle.dump(m, open(pickle_model,'wb'), protocol=pickle.HIGHEST_PROTOCOL)
         return
 
