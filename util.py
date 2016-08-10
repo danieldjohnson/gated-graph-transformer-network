@@ -2,6 +2,9 @@ import theano
 import theano.tensor as T
 import numpy as np
 import pickle
+import hashlib
+import json
+import enum
 
 import itertools
 import collections
@@ -144,3 +147,14 @@ def make_dropout_mask(shape, keep_frac, srng):
 
 def apply_dropout(ipt, dropout):
     return ipt * dropout
+
+def object_hash(thing):
+    class EnumEncoder(json.JSONEncoder):
+        def default(self, obj):
+            if isinstance(obj, enum.Enum):
+                return obj.name
+            return super().default(obj)
+    strform = json.dumps(thing, sort_keys=True, cls=EnumEncoder)
+    h = hashlib.sha1()
+    h.update(strform.encode('utf-8'))
+    return h.hexdigest()

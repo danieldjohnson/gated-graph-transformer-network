@@ -27,7 +27,7 @@ def helper_trim(bucketed, desired_total):
     trimmed_bucketed = [b[:amt] for b,amt in zip(bucketed, keep_amts)]
     return trimmed_bucketed
 
-def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, dropout_keep, resume, resume_auto, visualize, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_loss, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status, pickle_model, unpickle_model):
+def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, dropout_keep, resume, resume_auto, visualize, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_loss, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status, just_compile, autopickle, pickle_model, unpickle_model):
     output_format = model.ModelOutputFormat[output_format_str]
 
     with open(os.path.join(task_dir,'metadata.p'),'rb') as f:
@@ -57,11 +57,7 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
     else:
         word_node_mapping = {}
 
-    if unpickle_model is not None:
-        print("Unpickling model...")
-        m = pickle.load(open(unpickle_model, 'rb'))
-    else:
-        m = model.Model(num_input_words=len(wordlist),
+    model_kwargs = dict(num_input_words=len(wordlist),
                     num_output_words=len(eff_anslist),
                     num_node_ids=len(graph_node_list),
                     node_state_size=state_width,
@@ -86,10 +82,34 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
                     setup=True,
                     check_mode=check_mode)
 
+    if autopickle is not None:
+        if not os.path.exists(autopickle):
+            os.makedirs(autopickle)
+        model_hash = object_hash(model_kwargs)
+        model_filename = os.path.join(autopickle, "model_{}.p".format(model_hash))
+        print("Looking for cached model at {}".format(model_filename))
+        if os.path.isfile(model_filename):
+            print("Loading model from cache")
+            m, stored_kwargs = pickle.load(open(model_filename, 'rb'))
+            assert model_kwargs == stored_kwargs, "Hash collision between models!\nCurrent: {}\nStored: {}".format(model_kwargs,stored_kwargs)
+        else:
+            print("Building model from scratch")
+            m = model.Model(**model_kwargs)
+            print("Saving model to cache")
+            sys.setrecursionlimit(100000)
+            pickle.dump((m,model_kwargs), open(model_filename,'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+    elif unpickle_model is not None:
+        print("Unpickling model...")
+        m = pickle.load(open(unpickle_model, 'rb'))
+    else:
+        m = model.Model(**model_kwargs)
+
     if pickle_model is not None:
         sys.setrecursionlimit(100000)
         print("Pickling model...")
         pickle.dump(m, open(pickle_model,'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+
+    if just_compile:
         return
 
     if resume_auto:
@@ -170,7 +190,9 @@ parser.add_argument('--stop-at-loss', type=float, default=None, help="Stop train
 parser.add_argument('--stop-at-overfitting', type=float, default=None, help="Stop training once validation loss is this many times higher than train loss")
 parser.add_argument('--batch-adjust', type=int, default=None, help="If set, ensure that size of edge matrix does not exceed this")
 parser.add_argument('--set-exit-status', action="store_true", help="Give info about training status in the exit status")
-parser.add_argument('--pickle-model', metavar="MODELFILE", default=None, help="Save the compiled model to a file instead of training")
+parser.add_argument('--just-compile', action="store_true", help="Don't run the model, just compile it")
+parser.add_argument('--autopickle', metavar="PICKLEDIR", default=None, help="Automatically cache model in this directory")
+parser.add_argument('--pickle-model', metavar="MODELFILE", default=None, help="Save the compiled model to a file")
 parser.add_argument('--unpickle-model', metavar="MODELFILE", default=None, help="Load the model from a file instead of compiling it from scratch")
 resume_group = parser.add_mutually_exclusive_group()
 resume_group.add_argument('--resume', nargs=2, metavar=('TIMESTEP', 'PARAMFILE'), default=None, help='Where to restore from: timestep, and file to load')
