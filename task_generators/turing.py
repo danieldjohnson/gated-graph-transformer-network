@@ -97,8 +97,37 @@ def generate_universal(num_seqs, num_states, num_symbols, input_len, run_len):
         result.extend(story.lines)
     return "\n".join(result)+"\n"
 
-def main(num_seqs, num_states, num_symbols, input_len, run_len, file):
-    generated = generate_universal(num_seqs, num_states, num_symbols, input_len, run_len)
+def generate_busybeaver():
+    rules = [
+        [ # State A (0)
+            (1,1,'R'),
+            (1,2,'L'),
+        ],
+        [ # State B (1)
+            (1,0,'L'),
+            (1,1,'R'),
+        ],
+        [ # State C (2)
+            (1,1,'L'),
+            (1,3,'N'),
+        ],
+        [ # State HALT (3)
+            (0,3,'N'),
+            (1,3,'N'),
+        ],
+    ]
+    start_state = 0
+    input_list = [0]
+    head_index = 0
+    story = encode_turing_machine_rules(rules, start_state)
+    story = encode_turing_machine_process(rules, start_state, input_list, 16, head_index, story, True)
+    return "\n".join(story.lines)+"\n"
+
+def main(num_seqs, num_states, num_symbols, input_len, run_len, file, busybeaver):
+    if busybeaver:
+        generated = generate_busybeaver()
+    else:
+        generated = generate_universal(num_seqs, num_states, num_symbols, input_len, run_len)
     file.write(generated)
 
 parser = argparse.ArgumentParser(description='Generate a universal turing machine task')
@@ -108,6 +137,7 @@ parser.add_argument("--num-symbols", type=int, default=4, help="Number of symbol
 parser.add_argument("--input-len", type=int, default=5, help="Length of input")
 parser.add_argument("--run-len", type=int, default=10, help="How many steps to simulate")
 parser.add_argument("--num-seqs", type=int, default=1, help="Number of sequences to generate")
+parser.add_argument("--busybeaver", action="store_true", help="Just generate the busy-beaver task")
 
 if __name__ == '__main__':
     args = vars(parser.parse_args())

@@ -23,7 +23,7 @@ def decode_rules(rule_idx):
     values = int_to_bintuple(rule_idx,8)
     return dict(zip(keys,values))
 
-def generate(num_seqs, init_len, run_len, rule_idx):
+def generate(num_seqs, init_len, run_len, rule_idx, start_with=None):
     assert init_len > 0
     rules = decode_rules(rule_idx)
     result = []
@@ -34,8 +34,11 @@ def generate(num_seqs, init_len, run_len, rule_idx):
         nodes = []
         connect_edges = []
         value_edges = []
-        for i in range(init_len):
-            val = random.choice([0,1])
+        if start_with is None:
+            val_sequence = [random.choice([0,1]) for _ in range(init_len)]
+        else:
+            val_sequence = [int(x) for x in start_with]
+        for i,val in enumerate(val_sequence):
             cell_values.append(val)
             val_node = str(val)
             if val_node not in nodes:
@@ -76,9 +79,8 @@ def generate(num_seqs, init_len, run_len, rule_idx):
         result.extend(["{} {}".format(i+1,s) for i,s in enumerate(story)])
     return "\n".join(result)+"\n"
 
-
-def main(num_seqs, init_len, run_len, rule_idx, file):
-    generated = generate(num_seqs, init_len, run_len, rule_idx)
+def main(num_seqs, init_len, run_len, rule_idx, file, start_with):
+    generated = generate(num_seqs, init_len, run_len, rule_idx, start_with)
     file.write(generated)
 
 parser = argparse.ArgumentParser(description='Generate an ngrams task')
@@ -87,6 +89,7 @@ parser.add_argument("file", nargs="?", default=sys.stdout, type=argparse.FileTyp
 parser.add_argument("--num-seqs", type=int, default=1, help="Number of sequences to generate")
 parser.add_argument("--init-len", type=int, default=5, help="Length of initial cells")
 parser.add_argument("--run-len", type=int, default=5, help="Number of simulate steps")
+parser.add_argument("--start-with", default=None, help="Start with this exact input")
 
 if __name__ == '__main__':
     args = vars(parser.parse_args())
