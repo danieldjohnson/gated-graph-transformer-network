@@ -11,7 +11,7 @@ class PropagationTransformation( object ):
     """
     Transforms a graph state by propagating info across the graph
     """
-    def __init__(self, transfer_size, graph_spec, transfer_activation=(lambda x:x), dropout_keep=1):
+    def __init__(self, transfer_size, graph_spec, transfer_activation=identity, dropout_keep=1):
         """
         Params:
             transfer_size: Integer, how much to transfer

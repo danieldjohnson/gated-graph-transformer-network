@@ -8,6 +8,9 @@ import collections
 
 EPSILON = np.array(1e-8, np.float32)
 
+def identity(x):
+    return x
+
 def init_params(shape, stddev=0.1, shift=0.0):
     """Get an initial value for a parameter"""
     return np.float32(np.random.normal(shift, stddev, shape))

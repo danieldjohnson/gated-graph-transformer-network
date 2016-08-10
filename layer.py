@@ -5,7 +5,7 @@ from util import *
 
 class Layer(object):
 
-    def __init__(self, input_size, output_size, bias_shift=0.0, name='layer', activation=lambda x:x, dropout_keep=1):
+    def __init__(self, input_size, output_size, bias_shift=0.0, name='layer', activation=identity, dropout_keep=1):
         self.input_size = input_size
         self.output_size = output_size
         self.activation = activation
@@ -47,7 +47,7 @@ class Layer(object):
             return self.activation( xW + b )
 
 class LayerStack(object):
-    def __init__(self, input_size, output_size, hidden_sizes=[], bias_shift=0.0, name=None, hidden_activation=T.tanh, activation=lambda x:x, dropout_keep=1, dropout_input=True, dropout_output=False):
+    def __init__(self, input_size, output_size, hidden_sizes=[], bias_shift=0.0, name=None, hidden_activation=T.tanh, activation=identity, dropout_keep=1, dropout_input=True, dropout_output=False):
         self.input_size = input_size
         self.output_size =output_size
         self.name = name if name is not None else get_unique_name(type(self))
