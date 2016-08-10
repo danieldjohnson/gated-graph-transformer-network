@@ -1,5 +1,6 @@
 import run_harness
 import argparse
+import os
 
 def main(tasks_dir, output_dir):
     base_params = " ".join([
@@ -9,6 +10,7 @@ def main(tasks_dir, output_dir):
         "--num-updates 10000",
         "--batch-size 100",
         "--final-params-only",
+        "--autopickle {}".format(os.path.join(output_dir, "model_cache")),
         "--batch-adjust 28000000"])
 
     intermediate_propagate_tasks = {2,3,5,7,8}
@@ -44,9 +46,9 @@ def main(tasks_dir, output_dir):
                                         output_type,
                                         rsize,
                                         "1.0" if rsize==1000 else "0.95",
-                                        "" if False else "--stop-at-overfitting 5",
+                                        "" if False else "--stop-at-overfitting 2",
                                         extra_params))
-                for extra_params in ("--direct-reference","","--no-graph")
+                for extra_params in ("--direct-reference","")
                 for task_i, output_type in zip(range(1,21),output_types)
                 for rsize in restrict_sizes]
 
