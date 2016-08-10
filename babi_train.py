@@ -74,7 +74,7 @@ def assemble_correct_graphs(story_fns):
     for sfn in story_fns:
         with gzip.open(sfn,'rb') as f:
             cvtd_story, _, _, _ = pickle.load(f)
-        strengths, ids, _, edges = convert_story(cvtd_story)
+        strengths, ids, _, edges = convert_story.convert(cvtd_story)
         correct_strengths.append(strengths)
         correct_ids.append(ids)
         correct_edges.append(edges)
@@ -109,18 +109,11 @@ def test_accuracy(m, story_buckets, bucket_sizes, num_answer_words, format_spec,
             batch = assemble_batch(stories, num_answer_words, format_spec)
             answers = batch[2]
             args = batch[:2] + ((answers.shape[1],) if format_spec == model.ModelOutputFormat.sequence else ())
-            out_answers, out_strengths, out_ids, out_states, out_edges = m.snap_test_fn(*args)
 
             if test_graph:
-                correct_strengths, correct_ids, correct_edges = assemble_correct_graphs(stories)
-                strength_close = np.isclose(out_strengths[:,:correct_strengths.shape[1]], correct_strengths)
-                batch_strength_close = np.all(strength_close, (1))
-                id_close = np.isclose(out_ids[:,:correct_ids.shape[1]], correct_ids)
-                batch_id_close = np.all(id_close, (1,2))
-                edge_close = np.isclose(out_edges[:,:correct_edges.shape[1]], correct_edges)
-                batch_edge_close = np.all(edge_close, (1,2,3))
-                batch_close = reduce(np.logical_and, [batch_strength_close, batch_id_close, batch_edge_close])
+                _, batch_close, _ = m.eval(*batch, with_accuracy=True)
             else:
+                out_answers, out_strengths, out_ids, out_states, out_edges = m.snap_test_fn(*args)
                 close = np.isclose(out_answers, answers)
                 batch_close = np.all(close, (1,2))
 

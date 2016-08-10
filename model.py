@@ -162,7 +162,7 @@ class Model( object ):
         # graph_new_edges: shape(n_batch, n_sentence, pad_graph_size, pad_graph_size, num_edge_types)
         graph_new_edges = T.TensorType('floatX', (False,)*5)()
 
-        def _build(with_correct_graph, snap_to_best, using_dropout):
+        def _build(with_correct_graph, snap_to_best, using_dropout, evaluate_accuracy):
             info = {}
             # Process each sentence, flattened to (?, sentence_len)
             flat_input_words = input_words.reshape([-1, sentence_len])
@@ -203,6 +203,7 @@ class Model( object ):
                     gstate, dropout_masks = self.intermediate_propagator.process_multiple(gstate, self.intermediate_propagate, dropout_masks)
 
                 node_loss = None
+                node_accuracy = None
                 # Propose and vote on new nodes
                 if self.dynamic_nodes:
                     new_strengths, new_ids, dropout_masks = self.new_node_adder.get_candidates(gstate, input_repr, self.new_nodes_per_iter, dropout_masks)
@@ -232,6 +233,16 @@ class Model( object ):
                             log_rep_factor = T.gammaln(T.cast(self.new_nodes_per_iter - correct_num_new_nodes + 1, 'floatX'))
                             scaled_ll = full_ll - log_rep_factor
                             node_loss = -scaled_ll
+                        if evaluate_accuracy:
+                            best_match_idx = T.argmax(reduced_perm_lls, 1)
+                            # should be of shape (n_batch), indexing the best permutation
+                            best_correct_str = permuted_correct_str[T.arange(n_batch), best_match_idx]
+                            best_correct_ids = permuted_correct_ids[T.arange(n_batch), best_match_idx]
+                            snapped_strengths = util.independent_best(new_strengths)
+                            snapped_ids = util.categorical_best(new_ids) * T.shape_padright(snapped_strengths)
+                            close_strengths = T.all(T.isclose(best_correct_str, snapped_strengths), (1))
+                            close_ids = T.all(T.isclose(best_correct_ids, snapped_ids), (1,2))
+                            node_accuracy = T.and_(close_strengths, close_ids)
                         # now substitute in the correct nodes
                         gstate = gstate.with_additional_nodes(correct_new_strengths, correct_new_node_ids)
                     elif snap_to_best:
@@ -253,8 +264,15 @@ class Model( object ):
                     mask_dest = util.shape_padaxes(gstate.node_strengths,[1,3])
                     masked_edge_lls = edge_lls * mask_src * mask_dest
                     edge_loss = -T.sum(masked_edge_lls, axis=[1,2,3])
+                    if evaluate_accuracy:
+                        snapped_edges = util.independent_best(gstate.edge_strengths)
+                        close_edges = T.isclose(cropped_correct_edges, snapped_edges)
+                        edge_accuracy = T.all(close_edges * mask_src * mask_dest, (1,2,3))
+                        overall_accuracy = edge_accuracy if node_accuracy is None else T.and_(node_accuracy, edge_accuracy)
+                    else:
+                        overall_accuracy = None
                     gstate = gstate.with_updates(edge_strengths=cropped_correct_edges)
-                    return gstate, node_loss, edge_loss
+                    return gstate, node_loss, edge_loss, overall_accuracy
                 elif snap_to_best:
                     snapped_edges = util.independent_best(gstate.edge_strengths)
                     gstate = gstate.with_updates(edge_strengths=snapped_edges)
@@ -287,7 +305,7 @@ class Model( object ):
                 gstate = GraphState.unflatten_from_const_size(flat_graph_state)
 
                 if with_correct_graph:
-                    gstate, node_loss, edge_loss = _iter_fn(input_repr, ref_matrix, gstate, c_num_new_nodes, c_new_strengths, c_new_node_ids, c_edges, dropout_masks=dropout_masks)
+                    gstate, node_loss, edge_loss, overall_accuracy = _iter_fn(input_repr, ref_matrix, gstate, c_num_new_nodes, c_new_strengths, c_new_node_ids, c_edges, dropout_masks=dropout_masks)
                 else:
                     gstate = _iter_fn(input_repr, ref_matrix, gstate, dropout_masks=dropout_masks)
 
@@ -296,6 +314,8 @@ class Model( object ):
                     if self.dynamic_nodes:
                         retvals.append(node_loss)
                     retvals.append(edge_loss)
+                    if evaluate_accuracy:
+                        retvals.append(overall_accuracy)
                 return retvals
 
             if self.dynamic_nodes:
@@ -326,6 +346,13 @@ class Model( object ):
                 sequences.extend(iter_dropouts)
             all_scan_out, _ = theano.scan(_scan_fn, sequences=sequences, outputs_info=outputs_info, non_sequences=[pad_graph_size])
             if with_correct_graph:
+                if evaluate_accuracy:
+                    full_graph_accuracy = all_scan_out[-1]
+                    all_scan_out = all_scan_out[:-1]
+                    graph_accurate_list = T.all(full_graph_accuracy, 0)
+                    info["graph_accuracy"]=T.sum(graph_accurate_list)/T.cast(n_batch, 'floatX')
+                else:
+                    graph_accurate_list = None
                 if self.dynamic_nodes:
                     all_flat_gstates = all_scan_out[:-2]
                     node_loss, edge_loss = all_scan_out[-2:]
@@ -398,9 +425,9 @@ class Model( object ):
             else:
                 full_flat_gstates = [a.swapaxes(0,1) for a in all_flat_gstates[:-1]]
                 max_seq_len = T.iscalar()
-            return full_loss, final_output, full_flat_gstates, max_seq_len, info
+            return full_loss, final_output, full_flat_gstates, graph_accurate_list, max_seq_len, info
 
-        train_loss, _, _, _, train_info = _build(self.train_with_graph, False, True)
+        train_loss, _, _, _, _, train_info = _build(self.train_with_graph, False, True, False)
         adam_updates = Adam(train_loss, self.params)
 
         self.info_keys = list(train_info.keys())
@@ -423,9 +450,9 @@ class Model( object ):
                                         on_unused_input='ignore',
                                         mode=mode)
 
-        eval_loss, _, full_flat_gstates, _, eval_info = _build(self.train_with_graph, False, False)
+        eval_loss, _, full_flat_gstates, graph_accurate_list, eval_info = _build(self.train_with_graph, False, False, True)
         self.eval_fn = theano.function( [input_words, query_words, correct_output, graph_num_new_nodes, graph_new_node_strengths, graph_new_node_ids, graph_new_edges],
-                                        [eval_loss]+list(eval_info.values()),
+                                        [eval_loss, graph_accurate_list]+list(eval_info.values()),
                                         allow_input_downcast=True,
                                         on_unused_input='ignore',
                                         mode=mode)
@@ -436,14 +463,14 @@ class Model( object ):
                                         on_unused_input='ignore',
                                         mode=mode)
 
-        test_loss, final_output, full_flat_gstates, max_seq_len, _ = _build(False, False, False)
+        test_loss, final_output, full_flat_gstates, max_seq_len, _, _ = _build(False, False, False, False)
         self.fuzzy_test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
                                         [final_output] + full_flat_gstates,
                                         allow_input_downcast=True,
                                         on_unused_input='ignore',
                                         mode=mode)
 
-        test_loss, final_output, full_flat_gstates, max_seq_len, _ = _build(False, True, False)
+        test_loss, final_output, full_flat_gstates, max_seq_len, _, _ = _build(False, True, False, False)
         self.snap_test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
                                         [final_output] + full_flat_gstates,
                                         allow_input_downcast=True,
@@ -462,9 +489,13 @@ class Model( object ):
         info = dict(zip(self.info_keys, stuff[1:]))
         return loss, info
 
-    def eval(self, *args, **kwargs):
+    def eval(self, *args, with_accuracy=False, **kwargs):
         stuff = self.eval_fn(*args, **kwargs)
         loss = stuff[0]
-        info = dict(zip(self.info_keys, stuff[1:]))
-        return loss, info
+        accuracy = stuff[1]
+        info = dict(zip(self.info_keys, stuff[2:]))
+        if with_accuracy:
+            return loss, accuracy, info
+        else:
+            return loss, info
 
