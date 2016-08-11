@@ -24,7 +24,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, word_node_mapping={},  dynamic_nodes=True, nodes_mutable=True, wipe_node_state=True, best_node_match_only=True, intermediate_propagate=0, dropout_keep=1, use_old_aggregate=False, train_with_graph=True, train_with_query=True, setup=True, check_mode=None):
+    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, word_node_mapping={},  dynamic_nodes=True, nodes_mutable=True, wipe_node_state=True, best_node_match_only=True, intermediate_propagate=0, dropout_keep=1, use_old_aggregate=False, train_with_graph=True, train_with_query=True, setup=True, check_mode=None, learning_rate=0.0002):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -132,6 +132,7 @@ class Model( object ):
             self.parameterized.append(self.output_processor)
 
         self.srng = theano.sandbox.rng_mrg.MRG_RandomStreams(np.random.randint(0, 1024))
+        self.learning_rate_var = theano.shared(np.array(learning_rate, theano.config.floatX))
 
         if setup:
             self.setup()
@@ -430,7 +431,7 @@ class Model( object ):
             return full_loss, final_output, full_flat_gstates, graph_accurate_list, max_seq_len, info
 
         train_loss, _, _, _, _, train_info = _build(self.train_with_graph, False, True, False)
-        adam_updates = Adam(train_loss, self.params)
+        adam_updates = Adam(train_loss, self.params, lr=self.learning_rate_var)
 
         self.info_keys = list(train_info.keys())
 
@@ -501,3 +502,5 @@ class Model( object ):
         else:
             return loss, info
 
+    def set_learning_rate(self, lr):
+        self.learning_rate_var.set_value(np.array(lr, theano.config.floatX))

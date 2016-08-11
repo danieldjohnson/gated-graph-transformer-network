@@ -27,7 +27,7 @@ def helper_trim(bucketed, desired_total):
     trimmed_bucketed = [b[:amt] for b,amt in zip(bucketed, keep_amts)]
     return trimmed_bucketed
 
-def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, dropout_keep, resume, resume_auto, visualize, visualize_snap, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_loss, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status, just_compile, autopickle, pickle_model, unpickle_model):
+def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, learning_rate, dropout_keep, resume, resume_auto, visualize, visualize_snap, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_loss, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status, just_compile, autopickle, pickle_model, unpickle_model):
     output_format = model.ModelOutputFormat[output_format_str]
 
     with open(os.path.join(task_dir,'metadata.p'),'rb') as f:
@@ -112,6 +112,9 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
     if just_compile:
         return
 
+    if learning_rate is not None:
+        m.set_learning_rate(learning_rate)
+
     if resume_auto:
         paramfile = os.path.join(outputdir,'final_params.p')
         if os.path.isfile(paramfile):
@@ -175,6 +178,7 @@ parser.add_argument('--no-query', dest='train_with_query', action="store_false",
 parser.add_argument('--outputdir', default="output", help="Directory to save output in")
 parser.add_argument('--num-updates', default="10000", type=int, help="How many iterations to train")
 parser.add_argument('--batch-size', default="10", type=int, help="Batch size to use")
+parser.add_argument('--learning-rate', type=float, default=None, help="Use this learning rate")
 parser.add_argument('--dropout-keep', default=1, type=float, help="Use dropout, with this keep chance")
 parser.add_argument('--restrict-dataset', metavar="NUM_STORIES", type=int, default=None, help="Restrict size of dataset to this")
 parser.add_argument('--save-params-interval', type=int, default=1000, dest="train_save_params", help="Save parameters after this many iterations")
