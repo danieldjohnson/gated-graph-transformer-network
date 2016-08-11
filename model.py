@@ -267,7 +267,8 @@ class Model( object ):
                     if evaluate_accuracy:
                         snapped_edges = util.independent_best(gstate.edge_strengths)
                         close_edges = T.isclose(cropped_correct_edges, snapped_edges)
-                        edge_accuracy = T.all(close_edges * mask_src * mask_dest, (1,2,3))
+                        ok_mask = 1-T.cast(mask_src * mask_dest,'int8') # its OK for things not to match if node strengths are NOT both 1
+                        edge_accuracy = T.all(T.or_(close_edges, ok_mask), (1,2,3))
                         overall_accuracy = edge_accuracy if node_accuracy is None else T.and_(node_accuracy, edge_accuracy)
                     else:
                         overall_accuracy = None
@@ -341,18 +342,19 @@ class Model( object ):
 
                 if self.dynamic_nodes:
                     outputs_info.extend([None])
+                if evaluate_accuracy:
+                    outputs_info.extend([None])
                 outputs_info.extend([None])
             if using_dropout:
                 sequences.extend(iter_dropouts)
             all_scan_out, _ = theano.scan(_scan_fn, sequences=sequences, outputs_info=outputs_info, non_sequences=[pad_graph_size])
+            graph_accurate_list = None
             if with_correct_graph:
                 if evaluate_accuracy:
                     full_graph_accuracy = all_scan_out[-1]
                     all_scan_out = all_scan_out[:-1]
                     graph_accurate_list = T.all(full_graph_accuracy, 0)
-                    info["graph_accuracy"]=T.sum(graph_accurate_list)/T.cast(n_batch, 'floatX')
-                else:
-                    graph_accurate_list = None
+                    info["graph_accuracy"]=T.sum(graph_accurate_list, dtype='floatX')/T.cast(n_batch, 'floatX')
                 if self.dynamic_nodes:
                     all_flat_gstates = all_scan_out[:-2]
                     node_loss, edge_loss = all_scan_out[-2:]
@@ -450,7 +452,7 @@ class Model( object ):
                                         on_unused_input='ignore',
                                         mode=mode)
 
-        eval_loss, _, full_flat_gstates, graph_accurate_list, eval_info = _build(self.train_with_graph, False, False, True)
+        eval_loss, _, full_flat_gstates, graph_accurate_list, _, eval_info = _build(self.train_with_graph, False, False, True)
         self.eval_fn = theano.function( [input_words, query_words, correct_output, graph_num_new_nodes, graph_new_node_strengths, graph_new_node_ids, graph_new_edges],
                                         [eval_loss, graph_accurate_list]+list(eval_info.values()),
                                         allow_input_downcast=True,

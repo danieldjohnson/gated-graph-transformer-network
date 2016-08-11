@@ -117,6 +117,8 @@ def test_accuracy(m, story_buckets, bucket_sizes, num_answer_words, format_spec,
                 close = np.isclose(out_answers, answers)
                 batch_close = np.all(close, (1,2))
 
+            print(batch_close)
+
             batch_correct = np.sum(batch_close).tolist()
             batch_out_of = len(stories)
             correct +=  batch_correct
