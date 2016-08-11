@@ -57,6 +57,7 @@ def encode_turing_machine_process(rules, starting_state, iptlist, process_len, h
         cell = cells[head_index]
         read = cell_values[head_index]
         write, nstate, direc = rules[cstate][read]
+        cell_values[head_index] = write
         cell.value = graph.make_unique('symbol_{}'.format(write))
         cstate = nstate
         if update_state:
@@ -101,15 +102,15 @@ def generate_busybeaver():
     rules = [
         [ # State A (0)
             (1,1,'R'),
-            (1,2,'L'),
+            (1,3,'N'),
         ],
         [ # State B (1)
-            (1,0,'L'),
+            (0,2,'R'),
             (1,1,'R'),
         ],
         [ # State C (2)
-            (1,1,'L'),
-            (1,3,'N'),
+            (1,2,'L'),
+            (1,0,'L'),
         ],
         [ # State HALT (3)
             (0,3,'N'),
