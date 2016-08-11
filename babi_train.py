@@ -135,7 +135,7 @@ def adj_size(m, cur_bucket_size, batch_size, batch_auto_adjust):
     else:
         return batch_size
 
-def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None, validation_bucket_sizes=None, stop_at_accuracy=None, stop_at_loss=None, stop_at_overfitting=None, save_params=1000, batch_auto_adjust=None):
+def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None, validation_bucket_sizes=None, stop_at_accuracy=None, stop_at_loss=None, stop_at_overfitting=None, save_params=1000, validation_interval=1000, batch_auto_adjust=None):
     with GracefulInterruptHandler() as interrupt_h:
         for i in range(start+1,start+num_updates+1):
             cur_bucket, cur_bucket_size = random.choice(list(zip(story_buckets, bucket_sizes)))
@@ -157,7 +157,7 @@ def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_update
                 f.write("{}, {},".format(i,loss) + ", ".join(str(v) for k,v in sorted(info.items())) + "\n")
             if i % 1 == 0:
                 print("update {}: {}\n{}".format(i,loss,pformat(info)))
-            if i % 1000 == 0:
+            if i % validation_interval == 0:
                 if validation_buckets is not None:
                     cur_bucket, cur_bucket_size = random.choice(list(zip(validation_buckets, validation_bucket_sizes)))
                     cur_batch_size = adj_size(m, cur_bucket_size, batch_size, batch_auto_adjust)
