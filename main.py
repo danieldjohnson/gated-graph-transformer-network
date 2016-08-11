@@ -27,7 +27,7 @@ def helper_trim(bucketed, desired_total):
     trimmed_bucketed = [b[:amt] for b,amt in zip(bucketed, keep_amts)]
     return trimmed_bucketed
 
-def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, dropout_keep, resume, resume_auto, visualize, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_loss, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status, just_compile, autopickle, pickle_model, unpickle_model):
+def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, dropout_keep, resume, resume_auto, visualize, visualize_snap, debugtest, validation, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_loss, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status, just_compile, autopickle, pickle_model, unpickle_model):
     output_format = model.ModelOutputFormat[output_format_str]
 
     with open(os.path.join(task_dir,'metadata.p'),'rb') as f:
@@ -142,7 +142,7 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
             bucket, story = visualize
             source = [[bucketed[bucket][story]]]
         print("Starting to visualize...")
-        babi_train.visualize(m, source, wordlist, eff_anslist, output_format, outputdir)
+        babi_train.visualize(m, source, wordlist, eff_anslist, output_format, outputdir, snap=visualize_snap)
         print("Wrote visualization files to {}.".format(outputdir))
     elif evaluate_accuracy:
         print("Evaluating accuracy...")
@@ -183,6 +183,7 @@ parser.add_argument('--validation', metavar="VALIDATION_DIR", default=None, help
 parser.add_argument('--check-nan', dest="check_mode", action="store_const", const="nan", help="Check for NaN. Slows execution")
 parser.add_argument('--check-debug', dest="check_mode", action="store_const", const="debug", help="Debug mode. Slows execution")
 parser.add_argument('--visualize', nargs="?", const=True, default=False, type=lambda s:[int(x) for x in s.split(',')], help="Visualise current state instead of training. Optional parameter to fix ")
+parser.add_argument('--visualize-snap', action="store_true", help="In visualization mode, snap to best option at each timestep")
 parser.add_argument('--debugtest', action="store_true", help="Debug the training state")
 parser.add_argument('--evaluate-accuracy', action="store_true", help="Evaluate accuracy of model")
 parser.add_argument('--stop-at-accuracy', type=float, default=None, help="Stop training once it reaches this accuracy on validation set")

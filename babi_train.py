@@ -80,7 +80,7 @@ def assemble_correct_graphs(story_fns):
         correct_edges.append(edges)
     return tuple(np.concatenate(l,0) for l in (correct_strengths, correct_ids, correct_edges))
 
-def visualize(m, story_buckets, wordlist, answerlist, output_format, outputdir, batch_size=1, seq_len=5, debugmode=False):
+def visualize(m, story_buckets, wordlist, answerlist, output_format, outputdir, batch_size=1, seq_len=5, debugmode=False, snap=False):
     cur_bucket = random.choice(story_buckets)
     sampled_batch = sample_batch(cur_bucket, batch_size, len(answerlist), output_format)
     part_sampled_batch = sampled_batch[:3]
@@ -94,7 +94,7 @@ def visualize(m, story_buckets, wordlist, answerlist, output_format, outputdir, 
         print("FALKHVKADHL")
     else:
         args = part_sampled_batch[:2] + ((seq_len,) if output_format == model.ModelOutputFormat.sequence else ())
-        fn = m.fuzzy_test_fn
+        fn = m.snap_test_fn if snap else m.fuzzy_test_fn
     results = fn(*args)
     for i,result in enumerate(results):
         np.save(os.path.join(outputdir,'result_{}.npy'.format(i)), result)
