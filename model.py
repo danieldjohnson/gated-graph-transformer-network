@@ -454,6 +454,7 @@ class Model( object ):
                                         mode=mode)
 
         eval_loss, _, full_flat_gstates, graph_accurate_list, _, eval_info = _build(self.train_with_graph, False, False, True)
+        self.eval_info_keys = list(eval_info.keys())
         self.eval_fn = theano.function( [input_words, query_words, correct_output, graph_num_new_nodes, graph_new_node_strengths, graph_new_node_ids, graph_new_edges],
                                         [eval_loss, graph_accurate_list]+list(eval_info.values()),
                                         allow_input_downcast=True,
@@ -496,7 +497,7 @@ class Model( object ):
         stuff = self.eval_fn(*args, **kwargs)
         loss = stuff[0]
         accuracy = stuff[1]
-        info = dict(zip(self.info_keys, stuff[2:]))
+        info = dict(zip(self.eval_info_keys, stuff[2:]))
         if with_accuracy:
             return loss, accuracy, info
         else:
