@@ -98,25 +98,45 @@ def generate_universal(num_seqs, num_states, num_symbols, input_len, run_len):
         result.extend(story.lines)
     return "\n".join(result)+"\n"
 
-def generate_busybeaver():
-    rules = [
-        [ # State A (0)
-            (1,1,'R'),
-            (1,3,'N'),
-        ],
-        [ # State B (1)
-            (0,2,'R'),
-            (1,1,'R'),
-        ],
-        [ # State C (2)
-            (1,2,'L'),
-            (1,0,'L'),
-        ],
-        [ # State HALT (3)
-            (0,3,'N'),
-            (1,3,'N'),
-        ],
-    ]
+def generate_busybeaver(alt=False):
+    if alt:
+        rules = [
+            [ # State A (0)
+                (1,1,'R'),
+                (1,3,'N'),
+            ],
+            [ # State B (1)
+                (0,2,'R'),
+                (1,1,'R'),
+            ],
+            [ # State C (2)
+                (1,2,'L'),
+                (1,0,'L'),
+            ],
+            [ # State HALT (3)
+                (0,3,'N'),
+                (1,3,'N'),
+            ],
+        ]
+    else:
+        rules = [
+            [ # State A (0)
+                (1,1,'R'),
+                (1,2,'L'),
+            ],
+            [ # State B (1)
+                (1,0,'L'),
+                (1,1,'R'),
+            ],
+            [ # State C (2)
+                (1,1,'L'),
+                (1,3,'N'),
+            ],
+            [ # State HALT (3)
+                (0,3,'N'),
+                (1,3,'N'),
+            ],
+        ]
     start_state = 0
     input_list = [0]
     head_index = 0
@@ -124,9 +144,9 @@ def generate_busybeaver():
     story = encode_turing_machine_process(rules, start_state, input_list, 16, head_index, story, True)
     return "\n".join(story.lines)+"\n"
 
-def main(num_seqs, num_states, num_symbols, input_len, run_len, file, busybeaver):
+def main(num_seqs, num_states, num_symbols, input_len, run_len, file, busybeaver, busybeaver_alt):
     if busybeaver:
-        generated = generate_busybeaver()
+        generated = generate_busybeaver(busybeaver_alt)
     else:
         generated = generate_universal(num_seqs, num_states, num_symbols, input_len, run_len)
     file.write(generated)
@@ -139,6 +159,7 @@ parser.add_argument("--input-len", type=int, default=5, help="Length of input")
 parser.add_argument("--run-len", type=int, default=10, help="How many steps to simulate")
 parser.add_argument("--num-seqs", type=int, default=1, help="Number of sequences to generate")
 parser.add_argument("--busybeaver", action="store_true", help="Just generate the busy-beaver task")
+parser.add_argument("--busybeaver-alt", action="store_true", help="Generate alternate busy-beaver task")
 
 if __name__ == '__main__':
     args = vars(parser.parse_args())
