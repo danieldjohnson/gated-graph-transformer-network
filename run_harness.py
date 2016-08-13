@@ -44,6 +44,7 @@ def run(tasks_dir, output_dir, base_params, specs):
         all_params.extend(["--validation", task_folder_valid])
         all_params.extend(["--set-exit-status"])
         all_params.extend(["--resume-auto"])
+        all_params.extend(["--autopickle", os.path.join(output_dir, "model_cache")])
         print("Running command: " + " ".join(all_params))
         with open(stdout_fn, 'a', 1) as stdout_file:
             proc = subprocess.Popen(all_params, stdout=stdout_file, stderr=subprocess.STDOUT)
@@ -61,7 +62,7 @@ def run(tasks_dir, output_dir, base_params, specs):
             with open(completed_file,'w') as f:
                 f.write("FAIL_UPDATE_LIMIT\n")
         elif task_status == TrainExitStatus.overfitting:
-            print("FAIL! Detected overfitting.")
+            print(colored("FAIL! Detected overfitting.","red"))
             with open(completed_file,'w') as f:
                 f.write("FAIL_OVERFITTING\n")
         elif task_status == TrainExitStatus.error:

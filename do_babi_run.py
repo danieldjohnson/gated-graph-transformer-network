@@ -7,10 +7,12 @@ def main(tasks_dir, output_dir):
         "20",
         "--mutable-nodes",
         "--dynamic-nodes",
-        "--num-updates 10000",
+        "--num-updates 2000",
         "--batch-size 100",
         "--final-params-only",
-        "--autopickle {}".format(os.path.join(output_dir, "model_cache")),
+        "--learning-rate 0.002",
+        "--save-params-interval 100",
+        "--validation-interval 100",
         "--batch-adjust 28000000"])
 
     intermediate_propagate_tasks = {2,3,5,7,8}
@@ -48,9 +50,9 @@ def main(tasks_dir, output_dir):
                                         "1.0" if rsize==1000 else "0.95",
                                         "" if False else "--stop-at-overfitting 2",
                                         extra_params))
+                for rsize in reversed(restrict_sizes)
                 for extra_params in ("--direct-reference","")
-                for task_i, output_type in zip(range(1,21),output_types)
-                for rsize in restrict_sizes]
+                for task_i, output_type in zip(range(1,21),output_types)]
 
     run_harness.run(tasks_dir, output_dir, base_params, specs)
 
