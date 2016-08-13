@@ -265,7 +265,7 @@ function _graph_display(states,colormap,el,batch,options){
           }));
     
     function update_focus(datalist){
-        var div_w = 500.0/datalist.length;
+        var div_w = (0.0 + width)/datalist.length;
         if(div_w>20) div_w = 20;
         focus_detail = focus_detail.data(datalist)
         focus_detail.exit().remove();
@@ -275,7 +275,7 @@ function _graph_display(states,colormap,el,batch,options){
                     .attr('width',div_w)
                     .attr('height',20)
                     .attr('x',function(d,i){return div_w*i})
-                    .attr('y',450);
+                    .attr('y',height-20);
     }
     function do_focus(d){
         if(options.noninteractive)
