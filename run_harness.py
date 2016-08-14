@@ -47,7 +47,7 @@ def run(tasks_dir, output_dir, base_params, specs):
         all_params.extend(["--autopickle", os.path.join(output_dir, "model_cache")])
         print("Running command: " + " ".join(all_params))
         with open(stdout_fn, 'a', 1) as stdout_file:
-            proc = subprocess.Popen(all_params, stdout=stdout_file, stderr=subprocess.STDOUT)
+            proc = subprocess.Popen(all_params, bufsize=1, universal_newlines=True, stdout=stdout_file, stderr=subprocess.STDOUT)
             with GracefulInterruptHandler() as handler:
                 returncode = proc.wait()
                 interrupted = handler.interrupted
