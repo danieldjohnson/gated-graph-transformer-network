@@ -26,7 +26,11 @@ def run(tasks_dir, output_dir, base_params, specs):
         if not os.path.isdir(task_folder_valid):
             print(colored("Validation directory doesn't exist. Parsing text file...", attrs=["dark"]))
             textfile = task_folder_valid + ".txt"
-            subprocess.run(["python3","babi_graph_parse.py",textfile], check=True)
+            try:
+                subprocess.run(["python3","babi_graph_parse.py",textfile,"--metadata-file",os.path.join(task_folder_train,"metadata.p")], check=True)
+            except subprocess.CalledProcessError:
+                print(colored("Could not parse validation set! Skipping. You may need to regenerate the training set.","magenta"))
+                continue
 
         task_output_dir = os.path.join(output_dir, spec.task_name, spec.variant_name)
         if not os.path.isdir(task_output_dir):
@@ -51,24 +55,28 @@ def run(tasks_dir, output_dir, base_params, specs):
             with GracefulInterruptHandler() as handler:
                 returncode = proc.wait()
                 interrupted = handler.interrupted
-        task_status = TrainExitStatus(returncode)
 
-        if task_status == TrainExitStatus.success:
-            print(colored("SUCCESS! Reached desired correctness.","green"))
-            with open(completed_file,'w') as f:
-                f.write("SUCCESS\n")
-        elif task_status == TrainExitStatus.reached_update_limit:
-            print(colored("FAIL! Reached update limit without attaining desired correctness.","red"))
-            with open(completed_file,'w') as f:
-                f.write("FAIL_UPDATE_LIMIT\n")
-        elif task_status == TrainExitStatus.overfitting:
-            print(colored("FAIL! Detected overfitting.","red"))
-            with open(completed_file,'w') as f:
-                f.write("FAIL_OVERFITTING\n")
-        elif task_status == TrainExitStatus.error:
-            print(colored("Got an error; skipping for now. See {} for details.".format(stdout_fn),"magenta"))
-        elif task_status == TrainExitStatus.nan_loss:
-            print(colored("NaN loss detected; skipping for now.","magenta"))
+        if(returncode < 0):
+            print(colored("Process was killed by a signal!","magenta"))
+        else:
+            task_status = TrainExitStatus(returncode)
+
+            if task_status == TrainExitStatus.success:
+                print(colored("SUCCESS! Reached desired correctness.","green"))
+                with open(completed_file,'w') as f:
+                    f.write("SUCCESS\n")
+            elif task_status == TrainExitStatus.reached_update_limit:
+                print(colored("FAIL! Reached update limit without attaining desired correctness.","red"))
+                with open(completed_file,'w') as f:
+                    f.write("FAIL_UPDATE_LIMIT\n")
+            elif task_status == TrainExitStatus.overfitting:
+                print(colored("FAIL! Detected overfitting.","red"))
+                with open(completed_file,'w') as f:
+                    f.write("FAIL_OVERFITTING\n")
+            elif task_status == TrainExitStatus.error:
+                print(colored("Got an error; skipping for now. See {} for details.".format(stdout_fn),"magenta"))
+            elif task_status == TrainExitStatus.nan_loss:
+                print(colored("NaN loss detected; skipping for now.","magenta"))
         
         if task_status == TrainExitStatus.interrupted or interrupted:
             print(colored("Process was interrupted! Stopping...","cyan"))
