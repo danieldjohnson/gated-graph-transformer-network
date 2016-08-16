@@ -73,7 +73,7 @@ def run(tasks_dir, output_dir, base_params, specs):
                 print(colored("FAIL! Detected overfitting.","red"))
                 with open(completed_file,'w') as f:
                     f.write("FAIL_OVERFITTING\n")
-            elif task_status == TrainExitStatus.error:
+            elif task_status in (TrainExitStatus.error, TrainExitStatus.malformed_command):
                 print(colored("Got an error; skipping for now. See {} for details.".format(stdout_fn),"magenta"))
             elif task_status == TrainExitStatus.nan_loss:
                 print(colored("NaN loss detected; skipping for now.","magenta"))
