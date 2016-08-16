@@ -25,7 +25,7 @@ def main(tasks_dir, output_dir):
         "category", # [5]='WhoWhatGave',
         "category", # [6]='IsActorThere',
         "category", # [7]='Counting',
-        "set",      # [8]='Listing',
+        "subset",   # [8]='Listing',
         "category", # [9]='Negation',
         "category", # [10]='Indefinite',
         "category", # [11]='BasicCoreference',
