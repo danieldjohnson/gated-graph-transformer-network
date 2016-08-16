@@ -43,7 +43,7 @@ def run(tasks_dir, output_dir, base_params, specs):
 
         stdout_fn = os.path.join(task_output_dir, "stdout.txt")
 
-        all_params = ["python3", "main.py", task_folder_train] + run_params_split + base_params_split
+        all_params = ["python3", "-u", "main.py", task_folder_train] + run_params_split + base_params_split
         all_params.extend(["--outputdir", task_output_dir])
         all_params.extend(["--validation", task_folder_valid])
         all_params.extend(["--set-exit-status"])
