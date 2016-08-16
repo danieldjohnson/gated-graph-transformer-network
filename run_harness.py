@@ -38,7 +38,10 @@ def run(tasks_dir, output_dir, base_params, specs):
 
         completed_file = os.path.join(task_output_dir, "completed.txt")
         if os.path.exists(completed_file):
-            print("Task is already completed! Skipping...")
+            with open(completed_file,'r') as f:
+                reason = f.readline().strip()
+            reason = colored(reason, "green" if (reason == "SUCCESS") else "red" if ("FAIL" in reason) else "magenta")
+            print("Task is already completed, with result {}. Skipping...".format(reason))
             continue
 
         stdout_fn = os.path.join(task_output_dir, "stdout.txt")
