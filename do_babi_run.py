@@ -2,7 +2,7 @@ import run_harness
 import argparse
 import os
 
-def main(tasks_dir, output_dir):
+def main(tasks_dir, output_dir, excluding=[]):
     base_params = " ".join([
         "20",
         "--mutable-nodes",
@@ -54,11 +54,14 @@ def main(tasks_dir, output_dir):
                 for direct_ref in (True,False)
                 for task_i, output_type in zip(range(1,21),output_types)]
 
+    specs = [x for x in specs if x.task_name not in excluding]
+
     run_harness.run(tasks_dir, output_dir, base_params, specs)
 
 parser = argparse.ArgumentParser(description="Train all bAbI tasks.")
 parser.add_argument('tasks_dir', help="Directory with tasks")
 parser.add_argument('output_dir', help="Directory to save output to")
+parser.add_argument('--excluding', nargs='+', help="Tasks to exclude")
 
 if __name__ == '__main__':
     args = vars(parser.parse_args())
