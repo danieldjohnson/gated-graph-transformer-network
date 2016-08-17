@@ -7,7 +7,7 @@ def main(tasks_dir, output_dir):
         "20",
         "--mutable-nodes",
         "--dynamic-nodes",
-        "--num-updates 2000",
+        "--num-updates 4000",
         "--batch-size 100",
         "--final-params-only",
         "--learning-rate 0.002",
