@@ -12,6 +12,11 @@ function assert(condition, message) {
 
 var system = require('system');
 var visdir = system.args[1];
+var scale = system.args[2];
+if(scale === undefined)
+    scale = 1;
+else
+    scale = parseFloat(scale);
 var process = require("child_process");
 var webPage = require('webpage');
 var fs = require('fs');
@@ -32,12 +37,14 @@ process.execFile("python3", ["-m", "display.display_graph", visdir], null, funct
     console.log("Starting image generation...");
     var page = webPage.create();
     page.viewportSize = { width: (params_obj.options.width || 500), height: (params_obj.options.height || 500) };
+    page.zoomFactor = scale;
     page.onConsoleMessage = function(msg) {
         // console.log("Page says: ", msg);
         if(msg == "Loaded display_graph"){
             page.evaluate(function(params_obj){
                 window.next_fn = window._graph_display(params_obj.states, params_obj.colormap, document.body, 0, params_obj.options);
             }, params_obj);
+            page.render(imgdir + fs.separator + '0.png');
             for(var i=0; true; i++){
                 console.log("Writing image ", i);
                 page.render(imgdir + fs.separator + i + '.png');
