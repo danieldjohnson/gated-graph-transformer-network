@@ -467,14 +467,14 @@ class Model( object ):
                                         on_unused_input='ignore',
                                         mode=mode)
 
-        test_loss, final_output, full_flat_gstates, max_seq_len, _, _ = _build(False, False, False, False)
+        test_loss, final_output, full_flat_gstates, _, max_seq_len, _ = _build(False, False, False, False)
         self.fuzzy_test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
                                         [final_output] + full_flat_gstates,
                                         allow_input_downcast=True,
                                         on_unused_input='ignore',
                                         mode=mode)
 
-        test_loss, final_output, full_flat_gstates, max_seq_len, _, _ = _build(False, True, False, False)
+        test_loss, final_output, full_flat_gstates, _, max_seq_len, _ = _build(False, True, False, False)
         self.snap_test_fn = theano.function( [input_words, query_words] + ([max_seq_len] if self.output_format == ModelOutputFormat.sequence else []),
                                         [final_output] + full_flat_gstates,
                                         allow_input_downcast=True,
