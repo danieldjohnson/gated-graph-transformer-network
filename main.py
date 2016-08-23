@@ -27,7 +27,7 @@ def helper_trim(bucketed, desired_total):
     trimmed_bucketed = [b[:amt] for b,amt in zip(bucketed, keep_amts)]
     return trimmed_bucketed
 
-def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, learning_rate, dropout_keep, resume, resume_auto, visualize, visualize_snap, debugtest, validation, validation_interval, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_loss, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status, just_compile, autopickle, pickle_model, unpickle_model):
+def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, sequence_aggregate_repr, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, learning_rate, dropout_keep, resume, resume_auto, visualize, visualize_snap, debugtest, validation, validation_interval, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_loss, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status, just_compile, autopickle, pickle_model, unpickle_model):
     output_format = model.ModelOutputFormat[output_format_str]
 
     with open(os.path.join(task_dir,'metadata.p'),'rb') as f:
@@ -74,6 +74,7 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
                     nodes_mutable=mutable_nodes,
                     wipe_node_state=wipe_node_state,
                     intermediate_propagate=(5 if propagate_intermediate else 0),
+                    sequence_representation=sequence_aggregate_repr,
                     dropout_keep=dropout_keep,
                     use_old_aggregate=old_aggregate,
                     best_node_match_only=True,
@@ -174,6 +175,7 @@ parser.add_argument('--wipe-node-state', action="store_true", help="Wipe node st
 parser.add_argument('--direct-reference', action="store_true", help="Use direct reference for input, based on node names")
 parser.add_argument('--dynamic-nodes', action="store_true", help="Create nodes after each sentence. (Otherwise, create unique nodes at the beginning)")
 parser.add_argument('--propagate-intermediate', action="store_true", help="Run a propagation step after each sentence")
+parser.add_argument('--sequence-aggregate-repr', action="store_true", help="Compute the query aggregate representation from the sequence of graphs instead of just the last one")
 parser.add_argument('--old-aggregate', action="store_true", help="Use the old, incorrect aggregate function")
 parser.add_argument('--no-graph', dest='train_with_graph', action="store_false", help="Don't train using graph supervision")
 parser.add_argument('--no-query', dest='train_with_query', action="store_false", help="Don't train using query supervision")

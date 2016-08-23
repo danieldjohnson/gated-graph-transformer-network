@@ -11,3 +11,4 @@ from .output_category import OutputCategoryTransformation
 from .output_sequence import OutputSequenceTransformation
 from .output_set import OutputSetTransformation
 from .propagation import PropagationTransformation
+from .sequence_aggregate_summary import SequenceAggregateSummaryTransformation

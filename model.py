@@ -24,7 +24,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, word_node_mapping={},  dynamic_nodes=True, nodes_mutable=True, wipe_node_state=True, best_node_match_only=True, intermediate_propagate=0, dropout_keep=1, use_old_aggregate=False, train_with_graph=True, train_with_query=True, setup=True, check_mode=None, learning_rate=0.0002):
+    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, word_node_mapping={},  dynamic_nodes=True, nodes_mutable=True, wipe_node_state=True, best_node_match_only=True, intermediate_propagate=0, sequence_representation=False, dropout_keep=1, use_old_aggregate=False, train_with_graph=True, train_with_query=True, setup=True, check_mode=None, learning_rate=0.0002):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -43,6 +43,8 @@ class Model( object ):
             best_node_match_only: If the network should only train on the ordering with the
                 best match
             intermediate_propagate: How many steps to propagate info for each input sentence
+            sequence_representation: If True, compute aggregate representation across whole sequence
+                of graphs instead of just based on last graph
             dropout_keep: If <1, perform dropout with this chance of keeping a node.
             use_old_aggregate: Should it use the old (sofmax) activation
             dynamic_nodes: Whether to dynamically create nodes as sentences are read. If false,
@@ -69,6 +71,7 @@ class Model( object ):
         self.word_node_mapping = word_node_mapping
         self.best_node_match_only = best_node_match_only
         self.intermediate_propagate = intermediate_propagate
+        self.sequence_representation = sequence_representation
         self.dropout_keep = dropout_keep
         self.use_old_aggregate = use_old_aggregate
         self.dynamic_nodes = dynamic_nodes
@@ -121,6 +124,10 @@ class Model( object ):
 
             self.aggregator = AggregateRepresentationTransformation(output_repr_size, graphspec, dropout_keep=dropout_keep)
             self.parameterized.append(self.aggregator)
+
+            if self.sequence_representation:
+                self.aggregate_summarizer = tfms.SequenceAggregateSummaryTransformation(output_repr_size, output_repr_size, dropout_keep=dropout_keep)
+                self.parameterized.append(self.aggregate_summarizer)
 
             assert output_format in ModelOutputFormat, "Invalid output format {}".format(output_format)
             if output_format == ModelOutputFormat.category:
@@ -372,7 +379,24 @@ class Model( object ):
                     info["edge_loss"]=reduced_edge_loss
             else:
                 all_flat_gstates = all_scan_out
-            final_flat_gstate = [x[-1] for x in all_flat_gstates]
+
+            if self.sequence_representation:
+                # Each part of all_flat_gstates is of shape (n_sentences, n_batch, ...)
+                # except for the last one, which we handle separately
+                # Swap to (n_batch, n_sentences, ...)
+                # Then flatten to (n_batch*n_sentences, ...) for further processing
+                final_flat_gstate = [x.swapaxes(0,1).reshape(T.concatenate([[-1], x.shape[2:]]), ndim=(x.ndim-1)) for x in all_flat_gstates[:-1]]
+                # As for the last one, we need to get a single scalar value. The last one will be the biggest
+                # so we will take that. Note that this will introduce a bunch of zero-nodes, but thats
+                # OK and we can process that later. (We REQUIRE that padding in graph_state makes zero strength
+                # nodes here!)
+                final_flat_gstate.append(all_flat_gstates[-1][-1])
+                # We also need to repeat query_repr and query_ref_matrix so that they broadcast together
+                query_repr = T.extra_ops.repeat(query_repr, n_sentences, 0)
+                query_ref_matrix = T.extra_ops.repeat(query_ref_matrix, n_sentences, 0)
+            else:
+                # Extract last timestep
+                final_flat_gstate = [x[-1] for x in all_flat_gstates]
             final_gstate = GraphState.unflatten_from_const_size(final_flat_gstate)
 
             if self.train_with_query:
@@ -392,6 +416,15 @@ class Model( object ):
                 agg_dropout_masks = self.aggregator.dropout_masks(self.srng)
                 aggregated_repr, _ = self.aggregator.process(propagated_gstate, agg_dropout_masks) # shape (n_batch, output_repr_size)
                 
+                if self.sequence_representation:
+                    # aggregated_repr is of shape (n_batch*n_sentences, repr_width)
+                    # We want to split back to timesteps: (n_batch, n_sentences, repr_width)
+                    agg_repr_seq = aggregated_repr.reshape([n_batch, n_sentences, -1])
+                    # Now collapse it to a summary representation
+                    aggsum_dropout_masks = self.aggregate_summarizer.dropout_masks(self.srng)
+                    aggregated_repr, _ = self.aggregate_summarizer.process(agg_repr_seq, aggsum_dropout_masks)
+                    # At this point aggregated_repr is (n_batch, repr_width) as desired
+
                 max_seq_len = correct_output.shape[1]
                 if self.output_format == ModelOutputFormat.sequence:
                     final_output = self.output_processor.process(aggregated_repr, max_seq_len) # shape (n_batch, ?, num_output_words)
