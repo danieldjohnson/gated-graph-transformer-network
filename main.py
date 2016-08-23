@@ -82,6 +82,8 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
                     setup=True,
                     check_mode=check_mode)
 
+    model_kwargs = get_compatible_kwargs(model.Model, model_kwargs)
+
     if autopickle is not None:
         if not os.path.exists(autopickle):
             os.makedirs(autopickle)

@@ -5,6 +5,7 @@ import pickle
 import hashlib
 import json
 import enum
+import inspect
 
 import itertools
 import collections
@@ -158,3 +159,14 @@ def object_hash(thing):
     h = hashlib.sha1()
     h.update(strform.encode('utf-8'))
     return h.hexdigest()
+
+def get_compatible_kwargs(function, kwargs):
+    kwargs = dict(kwargs)
+    sig = inspect.signature(function)
+    for param in sig.parameters.values():
+        if param.name not in kwargs:
+            if param.default is inspect.Parameter.empty:
+                raise TypeError("kwargs missing required argument '{}'".format(param.name))
+            else:
+                kwargs[param.name] = param.default
+    return kwargs
