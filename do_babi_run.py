@@ -13,7 +13,7 @@ def main(tasks_dir, output_dir, excluding=[], run_sequential_set=False):
         "--learning-rate 0.002",
         "--save-params-interval 100",
         "--validation-interval 100",
-        "--batch-adjust 28000000"])
+        "--batch-adjust 16000000"])
 
     intermediate_propagate_tasks = {3,5}
     alt_sequential_set = {3,5}
