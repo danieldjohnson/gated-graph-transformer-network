@@ -2,7 +2,7 @@ import run_harness
 import argparse
 import os
 
-def main(tasks_dir, output_dir, excluding=[], run_sequential_set=False):
+def main(tasks_dir, output_dir, excluding=[], including_only=None, run_sequential_set=False):
     base_params = " ".join([
         "20",
         "--mutable-nodes",
@@ -62,7 +62,9 @@ def main(tasks_dir, output_dir, excluding=[], run_sequential_set=False):
                 for direct_ref in (True,False)
                 for task_i, output_type in tasks_and_outputs]
 
-    specs = [x for x in specs if x.task_name not in excluding]
+    specs = [x for x in specs if x.task_name[5:] not in excluding]
+    if including_only is not None:
+        specs = [x for x in specs if x.task_name[5:] in including_only]
 
     run_harness.run(tasks_dir, output_dir, base_params, specs)
 
@@ -70,6 +72,7 @@ parser = argparse.ArgumentParser(description="Train all bAbI tasks.")
 parser.add_argument('tasks_dir', help="Directory with tasks")
 parser.add_argument('output_dir', help="Directory to save output to")
 parser.add_argument('--excluding', nargs='+', default=[], help="Tasks to exclude")
+parser.add_argument('--including-only', nargs='+', default=None, help="Tasks to include, if given, else all tasks")
 parser.add_argument('--run-sequential-set', action="store_true", help="Run tasks with sequential output instead, and only run tasks that need it")
 
 if __name__ == '__main__':
