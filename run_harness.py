@@ -59,6 +59,7 @@ def run(tasks_dir, output_dir, base_params, specs, skip_complete=False):
                 returncode = proc.wait()
                 interrupted = handler.interrupted
 
+        task_status = None
         if returncode < 0:
             print(colored("Process was killed by a signal!","magenta"))
         elif skip_complete:
