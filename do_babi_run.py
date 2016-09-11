@@ -2,7 +2,7 @@ import run_harness
 import argparse
 import os
 
-def main(tasks_dir, output_dir, excluding=[], including_only=None, run_sequential_set=False):
+def main(tasks_dir, output_dir, excluding=[], including_only=None, run_sequential_set=False, just_setup=False):
     base_params = " ".join([
         "20",
         "--mutable-nodes",
@@ -49,6 +49,10 @@ def main(tasks_dir, output_dir, excluding=[], including_only=None, run_sequentia
         tasks_and_outputs = [tasks_and_outputs[x-1] for x in alt_sequential_set]
         intermediate_propagate_tasks = set()
 
+    if just_setup:
+        base_params = base_params + " --just-compile"
+        restrict_sizes = [1000]
+
     specs = [run_harness.TaskSpec(  "task_{}".format(task_i),
                                     str(rsize) + ("-direct" if direct_ref else ""),
                                     "{} --restrict-dataset {} --stop-at-accuracy {} {} {} {}".format(
@@ -66,7 +70,7 @@ def main(tasks_dir, output_dir, excluding=[], including_only=None, run_sequentia
     if including_only is not None:
         specs = [x for x in specs if x.task_name[5:] in including_only]
 
-    run_harness.run(tasks_dir, output_dir, base_params, specs)
+    run_harness.run(tasks_dir, output_dir, base_params, specs, skip_complete=just_setup)
 
 parser = argparse.ArgumentParser(description="Train all bAbI tasks.")
 parser.add_argument('tasks_dir', help="Directory with tasks")
@@ -74,6 +78,7 @@ parser.add_argument('output_dir', help="Directory to save output to")
 parser.add_argument('--excluding', nargs='+', default=[], help="Tasks to exclude")
 parser.add_argument('--including-only', nargs='+', default=None, help="Tasks to include, if given, else all tasks")
 parser.add_argument('--run-sequential-set', action="store_true", help="Run tasks with sequential output instead, and only run tasks that need it")
+parser.add_argument('--just-setup', action="store_true", help="Just setup the tasks, don't actually run them")
 
 if __name__ == '__main__':
     args = vars(parser.parse_args())

@@ -10,7 +10,7 @@ from termcolor import colored
 
 TaskSpec = collections.namedtuple("TaskSpec", ["task_name", "variant_name", "run_params"])
 
-def run(tasks_dir, output_dir, base_params, specs):
+def run(tasks_dir, output_dir, base_params, specs, skip_complete=False):
     base_params_split = shlex.split(base_params)
     for spec in specs:
         print(colored("### Task {} ({}) ###".format(spec.task_name, spec.variant_name), "yellow"))
@@ -59,8 +59,10 @@ def run(tasks_dir, output_dir, base_params, specs):
                 returncode = proc.wait()
                 interrupted = handler.interrupted
 
-        if(returncode < 0):
+        if returncode < 0:
             print(colored("Process was killed by a signal!","magenta"))
+        elif skip_complete:
+            print(colored("Skipping saving the result (skip_complete=True)"))
         else:
             task_status = TrainExitStatus(returncode)
 
