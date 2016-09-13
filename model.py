@@ -454,10 +454,16 @@ class Model( object ):
                 full_loss = full_loss + query_loss
 
             if self.train_with_query:
-                full_flat_gstates = [T.concatenate([a,T.shape_padleft(b),T.shape_padleft(c)],0).swapaxes(0,1)
+                adjusted_query_gstates = [ x.reshape(T.concatenate([[n_batch, n_sentences], x.shape[1:]]), ndim=(x.ndim+1))
+                                           if self.sequence_representation else T.shape_padaxis(x,1)
+                                           for x in query_gstate.flatten()]
+                adjusted_prop_gstates =  [ x.reshape(T.concatenate([[n_batch, n_sentences], x.shape[1:]]), ndim=(x.ndim+1))
+                                           if self.sequence_representation else T.shape_padaxis(x,1)
+                                           for x in propagated_gstate.flatten()]
+                full_flat_gstates = [T.concatenate([a.swapaxes(0,1),b,c],1)
                                         for a,b,c in zip(all_flat_gstates[:-1],
-                                                         query_gstate.flatten(),
-                                                         propagated_gstate.flatten())]
+                                                         adjusted_query_gstates,
+                                                         adjusted_prop_gstates)]
             else:
                 full_flat_gstates = [a.swapaxes(0,1) for a in all_flat_gstates[:-1]]
                 max_seq_len = T.iscalar()
