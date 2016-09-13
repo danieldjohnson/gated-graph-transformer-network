@@ -10,7 +10,7 @@ from termcolor import colored
 
 TaskSpec = collections.namedtuple("TaskSpec", ["task_name", "variant_name", "run_params"])
 
-def run(tasks_dir, output_dir, base_params, specs, skip_complete=False):
+def run(tasks_dir, output_dir, base_params, specs, stop_on_error=False, skip_complete=False):
     base_params_split = shlex.split(base_params)
     for spec in specs:
         print(colored("### Task {} ({}) ###".format(spec.task_name, spec.variant_name), "yellow"))
@@ -60,8 +60,10 @@ def run(tasks_dir, output_dir, base_params, specs, skip_complete=False):
                 interrupted = handler.interrupted
 
         task_status = None
+        was_error = False
         if returncode < 0:
             print(colored("Process was killed by a signal!","magenta"))
+            was_error = True
         elif skip_complete:
             print(colored("Skipping saving the result (skip_complete=True)"))
         else:
@@ -81,9 +83,15 @@ def run(tasks_dir, output_dir, base_params, specs, skip_complete=False):
                     f.write("FAIL_OVERFITTING\n")
             elif task_status in (TrainExitStatus.error, TrainExitStatus.malformed_command):
                 print(colored("Got an error; skipping for now. See {} for details.".format(stdout_fn),"magenta"))
+                was_error = True
             elif task_status == TrainExitStatus.nan_loss:
                 print(colored("NaN loss detected; skipping for now.","magenta"))
+                was_error = True
         
         if task_status == TrainExitStatus.interrupted or interrupted:
             print(colored("Process was interrupted! Stopping...","cyan"))
+            break
+
+        if was_error and stop_on_error:
+            print(colored("Got an error. Exiting...","cyan"))
             break

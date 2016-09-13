@@ -2,7 +2,7 @@ import run_harness
 import argparse
 import os
 
-def main(tasks_dir, output_dir, excluding=[], including_only=None, run_sequential_set=False, just_setup=False):
+def main(tasks_dir, output_dir, excluding=[], including_only=None, run_sequential_set=False, just_setup=False, stop_on_error=False):
     base_params = " ".join([
         "20",
         "--mutable-nodes",
@@ -70,7 +70,7 @@ def main(tasks_dir, output_dir, excluding=[], including_only=None, run_sequentia
     if including_only is not None:
         specs = [x for x in specs if x.task_name[5:] in including_only]
 
-    run_harness.run(tasks_dir, output_dir, base_params, specs, skip_complete=just_setup)
+    run_harness.run(tasks_dir, output_dir, base_params, specs, stop_on_error=stop_on_error, skip_complete=just_setup)
 
 parser = argparse.ArgumentParser(description="Train all bAbI tasks.")
 parser.add_argument('tasks_dir', help="Directory with tasks")
@@ -79,6 +79,7 @@ parser.add_argument('--excluding', nargs='+', default=[], help="Tasks to exclude
 parser.add_argument('--including-only', nargs='+', default=None, help="Tasks to include, if given, else all tasks")
 parser.add_argument('--run-sequential-set', action="store_true", help="Run tasks with sequential output instead, and only run tasks that need it")
 parser.add_argument('--just-setup', action="store_true", help="Just setup the tasks, don't actually run them")
+parser.add_argument('--stop-on-error', action="store_true", help="Stop if execution hits an error")
 
 if __name__ == '__main__':
     args = vars(parser.parse_args())
