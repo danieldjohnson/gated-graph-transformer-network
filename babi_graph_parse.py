@@ -281,7 +281,7 @@ def preprocess_stories(stories, savedir, dynamic=True, metadata_file=None):
         with gzip.open(story_fn, 'wb') as zf:
             pickle.dump(prepped, zf)
 
-        bucketed_files[bucket_idx].append(story_fn)
+        bucketed_files[bucket_idx].append(os.path.relpath(story_fn, savedir))
         gc.collect() # we don't want to use too much memory, so try to clean it up
 
     with open(os.path.join(savedir,'file_list.p'),'wb') as f:
