@@ -130,6 +130,10 @@ def adj_size(m, cur_bucket_size, batch_size, batch_auto_adjust):
     if batch_auto_adjust is not None:
         # Adjust batch size for this bucket
         edge_size = (cur_bucket_size**3) * (m.new_nodes_per_iter**2) * m.num_edge_types
+        if m.sequence_representation:
+            # In sequence representation mode, we are doing stuff with all objects at the same time
+            # so add a multiple of the edge size to get a nice bound
+            edge_size = edge_size * 4
         max_batch_size = batch_auto_adjust//edge_size
         return min(batch_size, max_batch_size)
     else:
