@@ -1,4 +1,3 @@
-import util
 import pickle
 import os
 import argparse
