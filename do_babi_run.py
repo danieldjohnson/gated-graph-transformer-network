@@ -1,8 +1,9 @@
 import run_harness
 import argparse
 import os
+import shlex
 
-def main(tasks_dir, output_dir, excluding=[], including_only=None, run_sequential_set=False, just_setup=False, stop_on_error=False):
+def main(tasks_dir, output_dir, excluding=[], including_only=None, run_sequential_set=False, just_setup=False, stop_on_error=False, extra_args=[]):
     base_params = " ".join([
         "20",
         "--mutable-nodes",
@@ -13,7 +14,8 @@ def main(tasks_dir, output_dir, excluding=[], including_only=None, run_sequentia
         "--learning-rate 0.002",
         "--save-params-interval 100",
         "--validation-interval 100",
-        "--batch-adjust 16000000"])
+        "--batch-adjust 16000000"]
+        + [shlex.quote(s) for s in extra_args])
 
     intermediate_propagate_tasks = {3,5}
     alt_sequential_set = {3,5}
@@ -82,6 +84,7 @@ parser.add_argument('--just-setup', action="store_true", help="Just setup the ta
 parser.add_argument('--stop-on-error', action="store_true", help="Stop if execution hits an error")
 
 if __name__ == '__main__':
-    args = vars(parser.parse_args())
-    main(**args)
+    namespace, extra = parser.parse_known_args()
+    args = vars(namespace)
+    main(extra_args=extra, **args)
 

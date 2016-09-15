@@ -135,7 +135,7 @@ def adj_size(m, cur_bucket_size, batch_size, batch_auto_adjust):
     else:
         return batch_size
 
-def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None, validation_bucket_sizes=None, stop_at_accuracy=None, stop_at_loss=None, stop_at_overfitting=None, save_params=1000, validation_interval=1000, batch_auto_adjust=None):
+def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None, validation_bucket_sizes=None, stop_at_accuracy=None, stop_at_loss=None, stop_at_overfitting=None, save_params=1000, validation_interval=1000, batch_auto_adjust=None, interrupt_file=None):
     with GracefulInterruptHandler() as interrupt_h:
         for i in range(start+1,num_updates+1):
             cur_bucket, cur_bucket_size = random.choice(list(zip(story_buckets, bucket_sizes)))
@@ -181,6 +181,6 @@ def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_update
                         return TrainExitStatus.overfitting
             if save_params is not None and i % save_params == 0:
                 util.save_params(m.params, open(os.path.join(outputdir, 'params{}.p'.format(i)), 'wb'))
-            if interrupt_h.interrupted:
+            if interrupt_h.interrupted or (interrupt_file is not None and os.path.isfile(interrupt_file)):
                 return TrainExitStatus.interrupted
     return TrainExitStatus.reached_update_limit
