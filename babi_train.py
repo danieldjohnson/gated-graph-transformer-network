@@ -142,13 +142,14 @@ def adj_size(m, cur_bucket_size, batch_size, batch_auto_adjust):
 def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_updates, outputdir, start=0, batch_size=BATCH_SIZE, validation_buckets=None, validation_bucket_sizes=None, stop_at_accuracy=None, stop_at_loss=None, stop_at_overfitting=None, save_params=1000, validation_interval=1000, batch_auto_adjust=None, interrupt_file=None):
     with GracefulInterruptHandler() as interrupt_h:
         for i in range(start+1,num_updates+1):
+            exit_with = None
             cur_bucket, cur_bucket_size = random.choice(list(zip(story_buckets, bucket_sizes)))
             cur_batch_size = adj_size(m, cur_bucket_size, batch_size, batch_auto_adjust)
             sampled_batch = sample_batch(cur_bucket, cur_batch_size, len_answers, output_format)
             loss, info = m.train(*sampled_batch)
             if np.any(np.isnan(loss)):
                 print("Loss at timestep {} was nan! Aborting".format(i))
-                return TrainExitStatus.nan_loss
+                return TrainExitStatus.nan_loss # Don't bother saving
             with open(os.path.join(outputdir,'data.csv'),'a') as f:
                 if i == 1:
                     f.seek(0)
@@ -176,15 +177,17 @@ def train(m, story_buckets, bucket_sizes, len_answers, output_format, num_update
                         f.write("{}, {}\n".format(i,valid_accuracy))
                     if stop_at_accuracy is not None and valid_accuracy >= stop_at_accuracy:
                         print("Accuracy reached threshold! Stopping training")
-                        return TrainExitStatus.success
+                        exit_with = TrainExitStatus.success
                     if stop_at_loss is not None and valid_loss <= stop_at_loss:
                         print("Loss reached threshold! Stopping training")
-                        return TrainExitStatus.success
+                        exit_with = TrainExitStatus.success
                     if stop_at_overfitting is not None and valid_loss/loss > stop_at_overfitting:
                         print("Model appears to be overfitting! Stopping training")
-                        return TrainExitStatus.overfitting
-            if save_params is not None and i % save_params == 0:
+                        exit_with = TrainExitStatus.overfitting
+            if exit_with is None and (interrupt_h.interrupted or (interrupt_file is not None and os.path.isfile(interrupt_file))):
+                exit_with = TrainExitStatus.interrupted
+            if (save_params is not None and i % save_params == 0) or (exit_with is not None) or (i==num_updates):
                 util.save_params(m.params, open(os.path.join(outputdir, 'params{}.p'.format(i)), 'wb'))
-            if interrupt_h.interrupted or (interrupt_file is not None and os.path.isfile(interrupt_file)):
-                return TrainExitStatus.interrupted
+            if exit_with is not None:
+                return exit_with
     return TrainExitStatus.reached_update_limit

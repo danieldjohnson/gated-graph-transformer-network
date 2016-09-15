@@ -6,6 +6,7 @@ import hashlib
 import json
 import enum
 import inspect
+import os
 
 import itertools
 import collections
@@ -170,3 +171,11 @@ def get_compatible_kwargs(function, kwargs):
             else:
                 kwargs[param.name] = param.default
     return kwargs
+
+def find_recent_params(outputdir):
+    files_list = list(os.listdir(outputdir))
+    numbers = [int(x[6:-2]) for x in files_list if x[:6]=="params" and x[-2:]==".p"]
+    if len(numbers) == 0:
+        return None
+    most_recent = max(numbers)
+    return most_recent, os.path.join(outputdir,"params{}.p".format(most_recent))

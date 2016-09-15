@@ -120,16 +120,15 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
     if learning_rate is not None:
         m.set_learning_rate(learning_rate)
 
+    if not os.path.exists(outputdir):
+        os.makedirs(outputdir)
+
     if resume_auto:
-        paramfile = os.path.join(outputdir,'final_params.p')
-        if os.path.isfile(paramfile):
-            with open(os.path.join(outputdir,'data.csv')) as f:
-                for line in f:
-                    pass
-                lastline = line
-                start_idx = lastline.split(',')[0]
+        result = util.find_recent_params(outputdir), most_recent
+        if result is not None:
+            start_idx, paramfile = result
             print("Automatically resuming from {} after iteration {}.".format(paramfile, start_idx))
-            resume = (start_idx, paramfile)
+            resume = result
         else:
             print("Didn't find anything to resume. Starting from the beginning...")
 
@@ -139,9 +138,6 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
         load_params(m.params, open(paramfile, "rb") )
     else:
         start_idx = 0
-
-    if not os.path.exists(outputdir):
-        os.makedirs(outputdir)
 
     if visualize is not False:
         if visualize is True:
@@ -163,7 +159,6 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
     else:
         print("Starting to train...")
         status = babi_train.train(m, bucketed, bucket_sizes, len(eff_anslist), output_format, num_updates, outputdir, start_idx, batch_size, validation_buckets, validation_bucket_sizes, stop_at_accuracy, stop_at_loss, stop_at_overfitting, train_save_params, validation_interval, batch_adjust, interrupt_file)
-        save_params(m.params, open( os.path.join(outputdir, "final_params.p"), "wb" ) )
         if set_exit_status:
             sys.exit(status.value)
 
