@@ -124,7 +124,7 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
         os.makedirs(outputdir)
 
     if resume_auto:
-        result = util.find_recent_params(outputdir), most_recent
+        result = find_recent_params(outputdir), most_recent
         if result is not None:
             start_idx, paramfile = result
             print("Automatically resuming from {} after iteration {}.".format(paramfile, start_idx))
