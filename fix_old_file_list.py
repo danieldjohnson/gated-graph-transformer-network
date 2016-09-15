@@ -1,4 +1,3 @@
-import model
 import util
 import pickle
 import os
