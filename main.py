@@ -49,7 +49,7 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
             validation_metadata = pickle.load(f)
         with open(os.path.join(validation,'file_list.p'),'rb') as f:
             validation_buckets = pickle.load(f)
-            validation_buckets = [[os.path.join(task_dir,x) for x in b] for b in validation_buckets]
+            validation_buckets = [[os.path.join(validation,x) for x in b] for b in validation_buckets]
         validation_bucket_sizes = validation_metadata[2]
 
     if direct_reference:
