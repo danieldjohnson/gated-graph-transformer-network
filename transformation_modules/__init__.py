@@ -1,7 +1,6 @@
 from .aggregate_representation import AggregateRepresentationTransformation
 from .aggregate_representation_softmax import AggregateRepresentationTransformationSoftmax
 from .edge_state_update import EdgeStateUpdateTransformation
-from .input_sequence import InputSequenceTransformation
 from .input_sequence_direct import InputSequenceDirectTransformation
 from .new_nodes_vote import NewNodesVoteTransformation
 from .new_nodes_inform import NewNodesInformTransformation

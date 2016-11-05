@@ -6,9 +6,9 @@ import math
 import sys
 
 import model
-import babi_train
-import babi_graph_parse
-from babi_graph_parse import MetadataList, PreppedStory
+import ggtnn_train
+import ggtnn_graph_parse
+from ggtnn_graph_parse import MetadataList, PreppedStory
 from util import *
 
 def helper_trim(bucketed, desired_total):
@@ -27,7 +27,7 @@ def helper_trim(bucketed, desired_total):
     trimmed_bucketed = [b[:amt] for b,amt in zip(bucketed, keep_amts)]
     return trimmed_bucketed
 
-def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, sequence_aggregate_repr, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, learning_rate, dropout_keep, resume, resume_auto, visualize, visualize_snap, debugtest, validation, validation_interval, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_loss, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status, just_compile, autopickle, pickle_model, unpickle_model, interrupt_file):
+def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, sequence_aggregate_repr, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, learning_rate, dropout_keep, resume, resume_auto, visualize, visualize_snap, visualization_test, validation, validation_interval, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_loss, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status, just_compile, autopickle, pickle_model, unpickle_model, interrupt_file):
     output_format = model.ModelOutputFormat[output_format_str]
 
     with open(os.path.join(task_dir,'metadata.p'),'rb') as f:
@@ -39,7 +39,7 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
         bucketed = helper_trim(bucketed, restrict_dataset)
 
     sentence_length, new_nodes_per_iter, bucket_sizes, wordlist, anslist, graph_node_list, graph_edge_list = metadata
-    eff_anslist = babi_train.get_effective_answer_words(anslist, output_format)
+    eff_anslist = ggtnn_train.get_effective_answer_words(anslist, output_format)
 
     if validation is None:
         validation_buckets = None
@@ -146,19 +146,19 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
             bucket, story = visualize
             source = [[bucketed[bucket][story]]]
         print("Starting to visualize...")
-        babi_train.visualize(m, source, wordlist, eff_anslist, output_format, outputdir, snap=visualize_snap)
+        ggtnn_train.visualize(m, source, wordlist, eff_anslist, output_format, outputdir, snap=visualize_snap)
         print("Wrote visualization files to {}.".format(outputdir))
     elif evaluate_accuracy:
         print("Evaluating accuracy...")
-        acc = babi_train.test_accuracy(m, bucketed, bucket_sizes, len(eff_anslist), output_format, batch_size, batch_adjust, (not train_with_query))
+        acc = ggtnn_train.test_accuracy(m, bucketed, bucket_sizes, len(eff_anslist), output_format, batch_size, batch_adjust, (not train_with_query))
         print("Obtained accuracy of {}".format(acc))
-    elif debugtest:
-        print("Starting debug test...")
-        babi_train.visualize(m, bucketed, wordlist, eff_anslist, output_format, outputdir, debugmode=True)
+    elif visualization_test:
+        print("Starting visualization test...")
+        ggtnn_train.visualize(m, bucketed, wordlist, eff_anslist, output_format, outputdir, debugmode=True)
         print("Wrote visualization files to {}.".format(outputdir))
     else:
         print("Starting to train...")
-        status = babi_train.train(m, bucketed, bucket_sizes, len(eff_anslist), output_format, num_updates, outputdir, start_idx, batch_size, validation_buckets, validation_bucket_sizes, stop_at_accuracy, stop_at_loss, stop_at_overfitting, train_save_params, validation_interval, batch_adjust, interrupt_file)
+        status = ggtnn_train.train(m, bucketed, bucket_sizes, len(eff_anslist), output_format, num_updates, outputdir, start_idx, batch_size, validation_buckets, validation_bucket_sizes, stop_at_accuracy, stop_at_loss, stop_at_overfitting, train_save_params, validation_interval, batch_adjust, interrupt_file)
         if set_exit_status:
             sys.exit(status.value)
 
@@ -188,9 +188,9 @@ parser.add_argument('--validation', metavar="VALIDATION_DIR", default=None, help
 parser.add_argument('--validation-interval', type=int, default=1000, help="Check validation after this many iterations")
 parser.add_argument('--check-nan', dest="check_mode", action="store_const", const="nan", help="Check for NaN. Slows execution")
 parser.add_argument('--check-debug', dest="check_mode", action="store_const", const="debug", help="Debug mode. Slows execution")
-parser.add_argument('--visualize', nargs="?", const=True, default=False, type=lambda s:[int(x) for x in s.split(',')], help="Visualise current state instead of training. Optional parameter to fix ")
+parser.add_argument('--visualize', nargs="?", const=True, default=False, metavar="BUCKET,STORY", type=lambda s:[int(x) for x in s.split(',')], help="Visualise current state instead of training. Optional parameter selects a particular story to visualize, and should be of the form bucketnum,index")
 parser.add_argument('--visualize-snap', action="store_true", help="In visualization mode, snap to best option at each timestep")
-parser.add_argument('--debugtest', action="store_true", help="Debug the training state")
+parser.add_argument('--visualization-test', action="store_true", help="Like visualize, but use the correct graph instead of the model's graph")
 parser.add_argument('--evaluate-accuracy', action="store_true", help="Evaluate accuracy of model")
 parser.add_argument('--stop-at-accuracy', type=float, default=None, help="Stop training once it reaches this accuracy on validation set")
 parser.add_argument('--stop-at-loss', type=float, default=None, help="Stop training once it reaches this loss on validation set")

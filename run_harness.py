@@ -20,14 +20,14 @@ def run(tasks_dir, output_dir, base_params, specs, stop_on_error=False, skip_com
         if not os.path.isdir(task_folder_train):
             print(colored("Train directory doesn't exist. Parsing text file...", attrs=["dark"]))
             textfile = task_folder_train + ".txt"
-            subprocess.run(["python3","babi_graph_parse.py",textfile], check=True)
+            subprocess.run(["python3","ggtnn_graph_parse.py",textfile], check=True)
 
         task_folder_valid = os.path.join(tasks_dir, "{}_valid".format(spec.task_name))
         if not os.path.isdir(task_folder_valid):
             print(colored("Validation directory doesn't exist. Parsing text file...", attrs=["dark"]))
             textfile = task_folder_valid + ".txt"
             try:
-                subprocess.run(["python3","babi_graph_parse.py",textfile,"--metadata-file",os.path.join(task_folder_train,"metadata.p")], check=True)
+                subprocess.run(["python3","ggtnn_graph_parse.py",textfile,"--metadata-file",os.path.join(task_folder_train,"metadata.p")], check=True)
             except subprocess.CalledProcessError:
                 print(colored("Could not parse validation set! Skipping. You may need to regenerate the training set.","magenta"))
                 continue

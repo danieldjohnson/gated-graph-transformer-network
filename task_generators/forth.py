@@ -2,10 +2,10 @@ import argparse
 import random
 import json
 import sys
-import generator_tools
+import graph_tools
 
 def build_sequence(forth_sequence, run_steps=0):
-    story = generator_tools.Story()
+    story = graph_tools.Story()
     graph = story.graph
 
     # Start

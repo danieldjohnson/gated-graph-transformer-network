@@ -1,4 +1,4 @@
-from babi_graph_parse import MetadataList
+from ggtnn_graph_parse import MetadataList
 from pprint import pprint
 import pickle
 import sys

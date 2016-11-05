@@ -3,11 +3,11 @@ import os
 import pickle
 import model
 import random
-import babi_graph_parse
+import ggtnn_graph_parse
 import convert_story
 import gzip
 from enum import Enum
-from babi_graph_parse import MetadataList, PreppedStory
+from ggtnn_graph_parse import MetadataList, PreppedStory
 from graceful_interrupt import GracefulInterruptHandler
 from pprint import pformat
 import util
@@ -85,13 +85,12 @@ def visualize(m, story_buckets, wordlist, answerlist, output_format, outputdir, 
     sampled_batch = sample_batch(cur_bucket, batch_size, len(answerlist), output_format)
     part_sampled_batch = sampled_batch[:3]
     with open(os.path.join(outputdir,'stories.txt'),'w') as f:
-        babi_graph_parse.print_batch(part_sampled_batch, wordlist, answerlist, file=f)
+        ggtnn_graph_parse.print_batch(part_sampled_batch, wordlist, answerlist, file=f)
     with open(os.path.join(outputdir,'answer_list.txt'),'w') as f:
         f.write('\n'.join(answerlist) + '\n')
     if debugmode:
         args = sampled_batch
         fn = m.debug_test_fn
-        print("FALKHVKADHL")
     else:
         args = part_sampled_batch[:2] + ((seq_len,) if output_format == model.ModelOutputFormat.sequence else ())
         fn = m.snap_test_fn if snap else m.fuzzy_test_fn

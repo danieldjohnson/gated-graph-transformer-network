@@ -2,7 +2,7 @@ import argparse
 import random
 import json
 import sys
-import generator_tools
+import graph_tools
 
 def make_turing_machine_rules(n_states, n_symbols):
     the_rules = [   [   (random.randrange(n_symbols), random.randrange(n_states), random.choice('LNR'))
@@ -12,7 +12,7 @@ def make_turing_machine_rules(n_states, n_symbols):
 
 def encode_turing_machine_rules(rules, starting_state=None, story=None):
     if story is None:
-        story = generator_tools.Story()
+        story = graph_tools.Story()
     graph = story.graph
     if starting_state is None:
         starting_state = random.choice(len(rules))
@@ -34,7 +34,7 @@ def encode_turing_machine_rules(rules, starting_state=None, story=None):
 
 def encode_turing_machine_process(rules, starting_state, iptlist, process_len, head_index=0, story=None, update_state=False):
     if story is None:
-        story = generator_tools.Story()
+        story = graph_tools.Story()
     graph = story.graph
     last_input = None
     cells = []

@@ -1,8 +1,8 @@
 import argparse
 import os
 import numpy as np
-import babi_graph_parse
-from babi_graph_parse import PreppedStory
+import ggtnn_graph_parse
+from ggtnn_graph_parse import PreppedStory
 import gzip
 import pickle
 
