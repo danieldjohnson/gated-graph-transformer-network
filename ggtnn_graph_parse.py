@@ -205,10 +205,9 @@ def convert_story(story, wordmap, answer_map, graph_node_map, graph_edge_map, ne
     answer_arr = [answer_map[w] for w in answer]
     return (sentence_arr, graphs, query_arr, answer_arr)
 
-def process_story(s,bucket_len):
-    return convert_story(pad_story(s, bucket_len, sentence_length), wordmap, answer_map, graph_node_map, graph_edge_map, new_nodes_per_iter, dynamic)
-
 def bucket_stories(stories, buckets, wordmap, answer_map, graph_node_map, graph_edge_map, sentence_length, new_nodes_per_iter, dynamic=True):
+    def process_story(s,bucket_len):
+        return convert_story(pad_story(s, bucket_len, sentence_length), wordmap, answer_map, graph_node_map, graph_edge_map, new_nodes_per_iter, dynamic)
     return [ [process_story(story,bmax) for story in stories if bstart < len(story[0]) <= bmax]
                 for bstart, bmax in zip([0]+buckets,buckets)]
 
