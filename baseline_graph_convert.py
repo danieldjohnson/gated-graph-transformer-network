@@ -2,18 +2,16 @@ import collections
 from ggtnn_graph_parse import *
 
 # A baseline graph is formatted as a single sequence of tokens, with indices as follows:
-# 0: STOP
-# 1: ;
-# 2: '
-# 3: ]
-# [4,4+N): node id
-# [4+N, 4+N+E]: edge id
+# ...,RESERVED_CT: magic symbols
+# [RESERVED_CT,RESERVED_CT+N): node id
+# [RESERVED_CT+N, RESERVED_CT+N+E]: edge id
 
 RESERVED_CT = 3
 # SYM_STOP = 0
 SYM_CLOSE = 0
-SYM_PRIME = 1
-SYM_ENDPRIME = 2
+SYM_PREV = 1
+SYM_NEXT = 2
+# SYM_ENDSTEPS = 3
 
 def baseline_convert_graph(graphs, nodemap, edgemap, dynamic=True):
     N = len(nodemap)
@@ -23,11 +21,16 @@ def baseline_convert_graph(graphs, nodemap, edgemap, dynamic=True):
     processed_nodes = []
     number_per_type = collections.defaultdict(int)
     counter_map = {}
-    def append_node(desc, node):
+    def append_node(desc, node, relto=None):
         desc.append(RESERVED_CT + nodemap[get_unqualified_id(node)])
-        for _ in range(counter_map[node]):
-            desc.append(SYM_PRIME)
-        desc.append(SYM_ENDPRIME)
+        if relto is not None:
+            if get_unqualified_id(node) == get_unqualified_id(relto):
+                diff = counter_map[node] - counter_map[relto]
+            else:
+                diff = counter_map[node]
+            for _ in range(abs(diff)):
+                desc.append(SYM_NEXT if diff>0 else SYM_PREV)
+        # desc.append(SYM_ENDSTEPS)
 
     for g in graphs:
         active_nodes = g["nodes"]
@@ -52,7 +55,7 @@ def baseline_convert_graph(graphs, nodemap, edgemap, dynamic=True):
             outgoing.sort(key=lambda et:(et[0],nodemap[get_unqualified_id(et[1])],counter_map[et[1]]))
             for typenum, dest in outgoing:
                 cur_desc.append(RESERVED_CT + N + typenum)
-                append_node(cur_desc, dest)
+                append_node(cur_desc, dest, relto=node)
             cur_desc.append(SYM_CLOSE)
         # cur_desc.append(SYM_STOP)
 
@@ -99,10 +102,10 @@ def baseline_print_graph(descs, nodelist, edgelist, file=sys.stdout):
         parts.append("Step {} (length {})\n".format(i, len(desc)))
         for item in desc:
             if item == SYM_CLOSE: parts.append("; ")
-            elif item == SYM_PRIME: parts.append("'")
-            elif item == SYM_ENDPRIME: parts.append(")")
+            elif item == SYM_PREV: parts.append("-")
+            elif item == SYM_NEXT: parts.append("+")
             elif (item-RESERVED_CT) < len(nodelist):
-                parts.append(nodelist[item-RESERVED_CT] + "(")
+                parts.append(nodelist[item-RESERVED_CT])
             else:
                 parts.append(" "+edgelist[item-RESERVED_CT-len(nodelist)]+"->")
         parts.append("\n\n")
@@ -112,8 +115,8 @@ def baseline_encode_single_graph(desc, nodelist, edgelist):
     parts = []
     for item in desc:
         if item == SYM_CLOSE: parts.append(";")
-        elif item == SYM_PRIME: parts.append("'")
-        elif item == SYM_ENDPRIME: parts.append(")")
+        elif item == SYM_PREV: parts.append("-")
+        elif item == SYM_NEXT: parts.append("+")
         elif (item-RESERVED_CT) < len(nodelist):
             parts.append(nodelist[item-RESERVED_CT])
         else:
@@ -166,8 +169,8 @@ def baseline_preprocess_stories(stories, savedir, dynamic=True, metadata_file=No
                     outfile.write((" ".join(optwords) + "\n").encode())
                     maxiptlen = max(maxiptlen, len(iptwords))
                     maxoptlen = max(maxoptlen, len(optwords))
-                    if len(optwords) > 800:
-                        print(optwords, len(optwords))
+                    # if len(optwords) > 800:
+                    #     print(optwords, len(optwords))
 
                 # prepped = PreppedStory(cvtd, sents, query, answer)
 
