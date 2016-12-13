@@ -1,4 +1,6 @@
 import collections
+import random
+import pickle
 from ggtnn_graph_parse import *
 
 # A baseline graph is formatted as a single sequence of tokens, with indices as follows:
@@ -120,7 +122,7 @@ def baseline_encode_single_graph(desc, nodelist, edgelist):
         elif (item-RESERVED_CT) < len(nodelist):
             parts.append(nodelist[item-RESERVED_CT])
         else:
-            parts.append(edgelist[item-RESERVED_CT-len(nodelist)]+"->")
+            parts.append(edgelist[item-RESERVED_CT-len(nodelist)])
     return parts
 
 def baseline_preprocess_stories(stories, savedir, dynamic=True, metadata_file=None):
@@ -148,6 +150,7 @@ def baseline_preprocess_stories(stories, savedir, dynamic=True, metadata_file=No
     with open(os.path.join(savedir,'in.txt'),'wb') as infile:
         with open(os.path.join(savedir,'out.txt'),'wb') as outfile:
 
+            lines = []
             for i,story in enumerate(stories):
                 # bucket_idx, cur_bucket = next(((i,bmax) for (i,(bstart, bmax)) in enumerate(zip([0]+buckets,buckets))
                 #                                 if bstart < len(story[0]) <= bmax), (None,None))
@@ -165,8 +168,7 @@ def baseline_preprocess_stories(stories, savedir, dynamic=True, metadata_file=No
                 for sent, ingraph, outgraph in zip(sents, itertools.chain([[]], graphs), graphs):
                     iptwords = sent + [">>>>>"] + baseline_encode_single_graph(ingraph, graph_node_list, graph_edge_list)
                     optwords = baseline_encode_single_graph(outgraph, graph_node_list, graph_edge_list)
-                    infile.write((" ".join(iptwords) + "\n").encode())
-                    outfile.write((" ".join(optwords) + "\n").encode())
+                    lines.append((" ".join(iptwords)," ".join(optwords)))
                     maxiptlen = max(maxiptlen, len(iptwords))
                     maxoptlen = max(maxoptlen, len(optwords))
                     # if len(optwords) > 800:
@@ -183,12 +185,34 @@ def baseline_preprocess_stories(stories, savedir, dynamic=True, metadata_file=No
 
                 # bucketed_files[bucket_idx].append(os.path.relpath(story_fn, savedir))
                 gc.collect() # we don't want to use too much memory, so try to clean it up
+            random.shuffle(lines)
+            for inline, outline in lines:
+                infile.write((inline + "\n").encode())
+                outfile.write((outline + "\n").encode())
 
+    outputWordSet = set.union(set(graph_node_list), set(graph_edge_list), set([";","-","+"]))
+    inputWordSet = set.union(set(wordlist), set([">>>>>"]), outputWordSet)
+
+    def processVocabSet(s):
+        d = {w:i+2 for i,w in enumerate(sorted(s))}
+        d['<S>'] = 0
+        d['<UNK>'] = 1
+        d['</S>'] = len(d)
+        return d
+
+    outputVocab = processVocabSet(outputWordSet)
+    inputVocab = processVocabSet(inputWordSet)
+
+    with open(os.path.join(savedir,'inputVocab.pkl'),'wb') as f:
+        pickle.dump(inputVocab,f,pickle.HIGHEST_PROTOCOL)
+
+    with open(os.path.join(savedir,'outputVocab.pkl'),'wb') as f:
+        pickle.dump(outputVocab,f,pickle.HIGHEST_PROTOCOL)
 
     with open(os.path.join(savedir,'options.txt'),'wb') as f:
-        gct = RESERVED_CT + len(graph_node_list) + len(graph_edge_list)
-        f.write("input vocab: {}\n".format( len(wordlist) + 1 + gct ).encode())
-        f.write("output vocab: {}\n".format( gct ).encode())
+        # gct = RESERVED_CT + len(graph_node_list) + len(graph_edge_list)
+        f.write("input vocab: {}\n".format( len(inputVocab) ).encode())
+        f.write("output vocab: {}\n".format( len(outputVocab) ).encode())
         f.write("input len: {}\n".format( maxiptlen ).encode())
         f.write("output len: {}\n".format( maxoptlen ).encode())
 
