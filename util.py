@@ -150,6 +150,40 @@ def make_dropout_mask(shape, keep_frac, srng):
 def apply_dropout(ipt, dropout):
     return ipt * dropout
 
+def sample_gumbel(srng, shape):
+    u = srng.uniform(shape)
+    return -T.log(-T.log(u))
+
+def make_concrete_sampler(srng, temp):
+    """
+    Create a function that will sample from a Concrete distribution
+    with the given temperature, and with parameters logalpha, where
+        logalpha in (-\infty, \infty)
+    This functions like a softmax.
+    """
+    def sample_concrete(logalpha):
+        gumbel = sample_gumbel(srng, logalpha.shape)
+        x = (logalpha + gumbel)/temp
+        return T.nnet.softmax(x)
+    return sample_concrete
+
+def sample_logistic(srng, shape):
+    u = srng.uniform(shape)
+    return T.log(u) - T.log(1-u)
+
+def make_binconcrete_sampler(srng, temp):
+    """
+    Create a function that will sample from a BinConcrete distribution
+    with the given temperature, and with parameters logalpha, where
+        logalpha in (-\infty, \infty)
+    This functions like a sigmoid.
+    """
+    def sample_binconcrete(logalpha):
+        L = sample_logistic(srng, logalpha.shape)
+        x = (logalpha + L)/temp
+        return T.nnet.sigmoid(x)
+    return sample_binconcrete
+
 def object_hash(thing):
     class EnumEncoder(json.JSONEncoder):
         def default(self, obj):

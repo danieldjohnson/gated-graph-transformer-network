@@ -24,7 +24,7 @@ class Model( object ):
     Implements the gated graph memory network model. 
     """
 
-    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, word_node_mapping={},  dynamic_nodes=True, nodes_mutable=True, wipe_node_state=True, best_node_match_only=True, intermediate_propagate=0, sequence_representation=False, dropout_keep=1, use_old_aggregate=False, train_with_graph=True, train_with_query=True, setup=True, check_mode=None, learning_rate=0.0002):
+    def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, word_node_mapping={},  dynamic_nodes=True, nodes_mutable=True, wipe_node_state=True, best_node_match_only=True, intermediate_propagate=0, sequence_representation=False, use_concrete=False, concrete_temp=(2/3), dropout_keep=1, use_old_aggregate=False, train_with_graph=True, train_with_query=True, setup=True, check_mode=None, learning_rate=0.0002):
         """
         Parameters:
             num_input_words: How many possible words in the input
@@ -51,6 +51,8 @@ class Model( object ):
                 a node with each id will be created at task start
             nodes_mutable: Whether nodes should update their state based on input
             wipe_node_state: Whether to wipe node state at the query
+            use_concrete: Whether to use concrete distribution for sampling
+            concrete_temp: Temperature for concrete distribution
             train_with_graph: If True, use the graph to train. Otherwise ignore the graph
             train_with_query: If True, use the query to train. Otherwise ignore the query
             setup: Whether or not to automatically set up the model
@@ -77,6 +79,8 @@ class Model( object ):
         self.dynamic_nodes = dynamic_nodes
         self.nodes_mutable = nodes_mutable
         self.wipe_node_state = wipe_node_state
+        self.use_concrete = use_concrete
+        self.concrete_temp = concrete_temp
         self.train_with_graph = train_with_graph
         self.train_with_query = train_with_query
         self.check_mode = check_mode
@@ -180,6 +184,10 @@ class Model( object ):
             input_reprs = flat_input_reprs.reshape([n_batch, n_sentences, self.input_repr_size])
             ref_matrices = flat_ref_matrices.reshape([n_batch, n_sentences, self.num_node_ids, self.input_repr_size])
 
+            concrete_choices = self.use_concrete and not (with_correct_graph or snap_to_best)
+            cat_choice_act = util.make_binconcrete_sampler(self.srng, self.concrete_temp) if concrete_choices else T.nnet.sigmoid
+            bin_choice_act = util.make_concrete_sampler(self.srng, self.concrete_temp) if concrete_choices else T.nnet.softmax
+
             query_repr, query_ref_matrix = self.input_transformer.process(query_words)
 
             if using_dropout:
@@ -214,7 +222,7 @@ class Model( object ):
                 node_accuracy = None
                 # Propose and vote on new nodes
                 if self.dynamic_nodes:
-                    new_strengths, new_ids, dropout_masks = self.new_node_adder.get_candidates(gstate, input_repr, self.new_nodes_per_iter, dropout_masks)
+                    new_strengths, new_ids, dropout_masks = self.new_node_adder.get_candidates(gstate, input_repr, self.new_nodes_per_iter, dropout_masks, bin_choice_act=bin_choice_act, cat_choice_act=cat_choice_act)
                     # new_strengths and correct_new_strengths are of shape (n_batch, new_nodes_per_iter)
                     # new_ids and correct_new_node_ids are of shape (n_batch, new_nodes_per_iter, num_node_ids)
                     if with_correct_graph:
@@ -262,7 +270,7 @@ class Model( object ):
 
 
                 # Update edge state
-                gstate, dropout_masks = self.edge_state_updater.process(gstate, input_repr, dropout_masks)
+                gstate, dropout_masks = self.edge_state_updater.process(gstate, input_repr, dropout_masks, bin_choice_act=bin_choice_act)
                 if with_correct_graph:
                     cropped_correct_edges = correct_edges[:,:gstate.n_nodes,:gstate.n_nodes,:]
                     edge_lls = cropped_correct_edges * T.log(gstate.edge_strengths + util.EPSILON) + (1-cropped_correct_edges) * T.log(1-gstate.edge_strengths + util.EPSILON)

@@ -42,7 +42,7 @@ class NewNodesInformTransformation( object ):
     def dropout_masks(self, srng):
         return self._inform_aggregate.dropout_masks(srng) + self._proposer_gru.dropout_masks(srng) + self._proposer_stack.dropout_masks(srng)
 
-    def get_candidates(self, gstate, input_vector, max_candidates, dropout_masks=Ellipsis):
+    def get_candidates(self, gstate, input_vector, max_candidates, dropout_masks=Ellipsis, bin_choice_act=T.nnet.sigmoid, cat_choice_act=T.nnet.softmax):
         """
         Get the current candidate new nodes. This is accomplished as follows:
           1. Using the aggregate transformation, we gather information from nodes (who should have performed
@@ -57,6 +57,8 @@ class NewNodesInformTransformation( object ):
             gstate: A GraphState giving the current state
             input_vector: A tensor of the form (n_batch, input_width)
             max_candidates: Integer, limit on the number of candidates to produce
+            bin_choice_act: Function mapping R -> (0,1) used to pick strengths
+            cat_choice_act: Function mapping R^n -> { x in R^n | |x|_1 = 1 } used to pick type
 
         Returns:
             new_strengths: A tensor of the form (n_batch, new_node_idx)
@@ -84,8 +86,8 @@ class NewNodesInformTransformation( object ):
         # raw_proposal_acts is of shape (candidate, n_batch, blah)
         flat_raw_acts = raw_proposal_acts.reshape([-1, self._proposal_width])
         flat_processed_acts, dropout_masks = self._proposer_stack.process(flat_raw_acts, dropout_masks)
-        candidate_strengths = T.nnet.sigmoid(flat_processed_acts[:,0]).reshape([max_candidates, n_batch])
-        candidate_ids = T.nnet.softmax(flat_processed_acts[:,1:]).reshape([max_candidates, n_batch, self._graph_spec.num_node_ids])
+        candidate_strengths = bin_choice_act(flat_processed_acts[:,0]).reshape([max_candidates, n_batch])
+        candidate_ids = cat_choice_act(flat_processed_acts[:,1:]).reshape([max_candidates, n_batch, self._graph_spec.num_node_ids])
 
         new_strengths = candidate_strengths.dimshuffle([1,0])
         new_ids = candidate_ids.dimshuffle([1,0,2])
@@ -94,7 +96,7 @@ class NewNodesInformTransformation( object ):
         else:
             return new_strengths, new_ids
 
-    def process(self, gstate, input_vector, max_candidates, dropout_masks=Ellipsis):
+    def process(self, gstate, input_vector, max_candidates, dropout_masks=Ellipsis, bin_choice_act=T.nnet.sigmoid, cat_choice_act=T.nnet.softmax):
         """
         Process an input vector and update the state accordingly.
         """
@@ -103,7 +105,7 @@ class NewNodesInformTransformation( object ):
             append_masks = False
         else:
             append_masks = True
-        new_strengths, new_ids, dropout_masks = self.get_candidates(gstate, input_vector, max_candidates, dropout_masks)
+        new_strengths, new_ids, dropout_masks = self.get_candidates(gstate, input_vector, max_candidates, dropout_masks, bin_choice_act=bin_choice_act, cat_choice_act=cat_choice_act)
         new_gstate = gstate.with_additional_nodes(new_strengths, new_ids)
         if append_masks:
             return new_gstate, dropout_masks

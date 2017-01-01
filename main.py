@@ -27,7 +27,7 @@ def helper_trim(bucketed, desired_total):
     trimmed_bucketed = [b[:amt] for b,amt in zip(bucketed, keep_amts)]
     return trimmed_bucketed
 
-def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, sequence_aggregate_repr, old_aggregate, train_with_graph, train_with_query, outputdir, num_updates, batch_size, learning_rate, dropout_keep, resume, resume_auto, visualize, visualize_snap, visualization_test, validation, validation_interval, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_loss, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status, just_compile, autopickle, pickle_model, unpickle_model, interrupt_file):
+def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_nodes, mutable_nodes, wipe_node_state, direct_reference, propagate_intermediate, sequence_aggregate_repr, old_aggregate, train_with_graph, train_with_query, concrete_sample, outputdir, num_updates, batch_size, learning_rate, dropout_keep, resume, resume_auto, visualize, visualize_snap, visualization_test, validation, validation_interval, evaluate_accuracy, check_mode, stop_at_accuracy, stop_at_loss, stop_at_overfitting, restrict_dataset, train_save_params, batch_adjust, set_exit_status, just_compile, autopickle, pickle_model, unpickle_model, interrupt_file):
     output_format = model.ModelOutputFormat[output_format_str]
 
     with open(os.path.join(task_dir,'metadata.p'),'rb') as f:
@@ -82,6 +82,8 @@ def main(task_dir, output_format_str, state_width, process_repr_size, dynamic_no
                     best_node_match_only=True,
                     train_with_graph=train_with_graph,
                     train_with_query=train_with_query,
+                    use_concrete=concrete_sample,
+                    concrete_temp=(2/3),
                     setup=True,
                     check_mode=check_mode)
 
@@ -176,6 +178,7 @@ parser.add_argument('--sequence-aggregate-repr', action="store_true", help="Comp
 parser.add_argument('--old-aggregate', action="store_true", help="Use the old, incorrect aggregate function")
 parser.add_argument('--no-graph', dest='train_with_graph', action="store_false", help="Don't train using graph supervision")
 parser.add_argument('--no-query', dest='train_with_query', action="store_false", help="Don't train using query supervision")
+parser.add_argument('--concrete-sample', action="store_true", help="Sample all choices from a concrete distribution")
 parser.add_argument('--outputdir', default="output", help="Directory to save output in")
 parser.add_argument('--num-updates', default="10000", type=int, help="How many iterations to train")
 parser.add_argument('--batch-size', default="10", type=int, help="Batch size to use")
