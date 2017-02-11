@@ -21,7 +21,7 @@ class ModelOutputFormat( Enum ):
 
 class Model( object ):
     """
-    Implements the gated graph memory network model. 
+    Implements the gated graph transformer network model. 
     """
 
     def __init__(self, num_input_words, num_output_words, num_node_ids, node_state_size, num_edge_types, input_repr_size, output_repr_size, propose_repr_size, propagate_repr_size, new_nodes_per_iter, output_format, final_propagate, word_node_mapping={},  dynamic_nodes=True, nodes_mutable=True, wipe_node_state=True, best_node_match_only=True, intermediate_propagate=0, sequence_representation=False, dropout_keep=1, use_old_aggregate=False, train_with_graph=True, train_with_query=True, setup=True, check_mode=None, learning_rate=0.0002):
