@@ -275,7 +275,7 @@ class Model( object ):
                     if evaluate_accuracy:
                         snapped_edges = util.independent_best(gstate.edge_strengths)
                         close_edges = T.isclose(cropped_correct_edges, snapped_edges)
-                        ok_mask = 1-T.cast(mask_src * mask_dest,'int8') # its OK for things not to match if node strengths are NOT both 1
+                        ok_mask = T.invert(T.cast(mask_src * mask_dest,'bool')) # its OK for things not to match if node strengths are NOT both 1
                         edge_accuracy = T.all(T.or_(close_edges, ok_mask), (1,2,3))
                         overall_accuracy = edge_accuracy if node_accuracy is None else T.and_(node_accuracy, edge_accuracy)
                     else:
