@@ -1,6 +1,6 @@
 # Graphical State Transitions Framework
 
-This is the code supporting my paper ["Learning Graphical State Transitions"][gpaper], which is under review for ICLR 2017. It consists of
+This is the code supporting my paper ["Learning Graphical State Transitions"][gpaper], published in ICLR 2017. It consists of
 
 - implementation of each of the graph transformations described in the paper (in the transformation_modules subdirectory)
 - implementation of the Gated Graph Transformer Neural Network model (model.py)
