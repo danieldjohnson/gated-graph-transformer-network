@@ -73,7 +73,7 @@ def main(tasks_dir, output_dir, excluding=[], including_only=None, run_sequentia
     specs = [x for x in specs if x.task_name[5:] not in excluding]
     if including_only is not None:
         specs = [x for x in specs if x.task_name[5:] in including_only]
-    from pprint import pprint; pprint(specs); return
+    # from pprint import pprint; pprint(specs); return
     run_harness.run(tasks_dir, output_dir, base_params, specs, stop_on_error=stop_on_error, skip_complete=just_setup)
 
 parser = argparse.ArgumentParser(description="Train all bAbI tasks.")
